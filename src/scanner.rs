@@ -55,7 +55,7 @@ impl Scanner {
             self.advance();
         }
         if self.is_at_end() {
-            return Err(Error::UnTerminatedString);
+            return Err(Error::UnterminatedString);
         }
         // closing
         self.advance();
@@ -93,7 +93,7 @@ impl Scanner {
         );
     }
     fn identifier(&mut self) {
-        while self.peek().is_ascii_alphanumeric() {
+        while self.peek().is_ascii_alphanumeric() || self.peek() == '_' {
             self.advance();
         }
         let tt = self.source[self.start..self.current]
@@ -167,19 +167,16 @@ impl Scanner {
             '0'..='9' => {
                 self.number();
             }
-            _ if c.is_ascii_alphabetic() => {
+            _ if c.is_ascii_alphabetic() || c == '_' => {
                 self.identifier();
             }
             _ => {
-                return Err(Error::UnExpectedToken);
+                return Err(Error::UnexpectedToken);
             }
         }
         Ok(())
     }
     fn advance(&mut self) -> char {
-        if cfg!(debug_assertions) {
-            println!("current: {}", self.current);
-        }
         self.current += 1;
         self.source[self.current - 1]
     }
@@ -245,7 +242,12 @@ mod tests {
     }
     #[test]
     fn test_ident_and_keyw() {
-        let mut scanner = Scanner::new("andand".to_string());
+        let mut scanner = Scanner::new("andand_ //abcde_\na".to_string());
         println!("{:?}", scanner.scan_tokens());
+    }
+    #[test]
+    fn test_paren() {
+        let mut scanner = Scanner::new(r#"print("Hello, World")"#.to_string());
+        println!("{:#?}", scanner.scan_tokens());
     }
 }

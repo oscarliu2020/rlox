@@ -5,13 +5,13 @@ pub fn run(content: &str) {
     let mut scanner = scanner::Scanner::new(content.to_string());
     let tokens = scanner.scan_tokens().unwrap();
     for token in tokens {
-        println!("{:?}", token);
+        println!("{}", token);
     }
 }
 pub fn run_file(fname: &str) {
     let content = fs::read_to_string(fname).expect("File not found");
     run(&content);
-    todo!();
+    // todo!();
 }
 pub fn run_prompt() {
     let mut input = String::new();
@@ -34,9 +34,4 @@ pub fn run_prompt() {
 
         input.clear();
     }
-    todo!();
-}
-#[test]
-fn test_runner() {
-    run_prompt();
 }
