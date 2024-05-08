@@ -1,4 +1,4 @@
-use super::Error;
+use super::Result;
 use std::fmt;
 pub struct Scanner {
     source: Vec<char>,
@@ -18,7 +18,7 @@ impl Scanner {
         }
     }
     fn _add_token(&mut self, ty: token::TokenType, literal: Option<Literal>) {
-        let text = self.source[self.start..self.current].into_iter().collect();
+        let text = self.source[self.start..self.current].iter().collect();
         self.tokens.push(Token {
             token_type: ty,
             lexeme: text,
@@ -33,7 +33,7 @@ impl Scanner {
         let f = self
             .source
             .get(self.current)
-            .map(|c| *c)
+            .copied()
             .unwrap_or(b'\0' as char)
             == expected;
         if f {
@@ -44,10 +44,10 @@ impl Scanner {
     fn peek(&self) -> char {
         self.source
             .get(self.current)
-            .map(|c| *c)
+            .copied()
             .unwrap_or(b'\0' as char)
     }
-    fn string(&mut self) -> Result<(), Error> {
+    fn string(&mut self) -> Result<()> {
         while (self.peek() != '"') && !self.is_at_end() {
             if self.peek() == '\n' {
                 self.line += 1;
@@ -55,7 +55,7 @@ impl Scanner {
             self.advance();
         }
         if self.is_at_end() {
-            return Err(Error::UnterminatedString);
+            return Err((self.line, "Unterminated string"));
         }
         // closing
         self.advance();
@@ -68,7 +68,7 @@ impl Scanner {
     fn peek_next(&self) -> char {
         self.source
             .get(self.current + 1)
-            .map(|c| *c)
+            .copied()
             .unwrap_or(b'\0' as char)
     }
     fn number(&mut self) {
@@ -104,7 +104,7 @@ impl Scanner {
             .unwrap_or(&token::TokenType::IDENTIFIER);
         self.add_token(*ty)
     }
-    pub fn scan_token(&mut self) -> Result<(), Error> {
+    pub fn scan_token(&mut self) -> Result<()> {
         let c = self.advance();
         match c {
             '(' => self.add_token(token::TokenType::LEFT_PAREN),
@@ -158,7 +158,10 @@ impl Scanner {
                     self.add_token(token::TokenType::SLASH);
                 }
             }
-            ' ' | '\r' | '\t' | '\n' => {
+            ' ' | '\r' | '\t' => {
+                // ignore whitespace
+            }
+            '\n' => {
                 self.line += 1;
             }
             '"' => {
@@ -171,7 +174,7 @@ impl Scanner {
                 self.identifier();
             }
             _ => {
-                return Err(Error::UnexpectedToken);
+                return Err((self.line, "Unexpected character"));
             }
         }
         Ok(())
@@ -180,7 +183,7 @@ impl Scanner {
         self.current += 1;
         self.source[self.current - 1]
     }
-    pub fn scan_tokens(&mut self) -> Result<&[Token], Error> {
+    pub fn scan_tokens(&mut self) -> Result<&[Token]> {
         while !self.is_at_end() {
             self.start = self.current;
             self.scan_token()?;
@@ -248,6 +251,12 @@ mod tests {
     #[test]
     fn test_paren() {
         let mut scanner = Scanner::new(r#"print("Hello, World")"#.to_string());
+
         println!("{:#?}", scanner.scan_tokens());
+    }
+    #[test]
+    fn test_fail() {
+        let mut scanner = Scanner::new("1+1=2\n\"abc\u{4e00}".to_string());
+        println!("{:?}", scanner.scan_tokens().unwrap_err());
     }
 }
