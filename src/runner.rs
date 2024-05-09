@@ -1,12 +1,13 @@
+use super::parser::{ast::Interpreter, Parser};
 use super::scanner;
 use std::fs;
 use std::io::{stdin, Write};
 pub fn run(content: &str) {
     let mut scanner = scanner::Scanner::new(content.to_string());
     let tokens = scanner.scan_tokens().unwrap();
-    for token in tokens {
-        println!("{}", token);
-    }
+    let mut parser = Parser::new(tokens);
+    let stmts = parser.parse().unwrap();
+    (&stmts[..]).interpret();
 }
 pub fn run_file(fname: &str) {
     let content = fs::read_to_string(fname).expect("File not found");

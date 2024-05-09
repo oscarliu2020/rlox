@@ -1,5 +1,5 @@
 use super::Result;
-use std::fmt;
+use std::fmt::{self, Display};
 pub struct Scanner {
     source: Vec<char>,
     tokens: Vec<Token>,
@@ -202,12 +202,31 @@ impl Scanner {
     }
 }
 pub mod token;
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Literal {
     Number(f64),
     String(String),
     Boolean(bool),
     Nil,
+}
+impl Display for Literal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Literal::Nil => write!(f, "nil"),
+            Literal::Boolean(b) => write!(f, "{}", b),
+            Literal::Number(n) => write!(f, "{:.}", *n),
+            Literal::String(s) => write!(f, "\"{}\"", s),
+        }
+    }
+}
+impl Literal {
+    pub fn is_truthy(&self) -> bool {
+        match self {
+            Literal::Nil => false,
+            Literal::Boolean(b) => *b,
+            _ => true,
+        }
+    }
 }
 #[derive(Debug, Clone)]
 pub struct Token {

@@ -13,3 +13,12 @@ fn run() {
         println!("-------------------");
     }
 }
+#[test]
+fn test_evaluate() {
+    run_file("test_data/parsing/evaluate.lox");
+}
+#[test]
+#[should_panic]
+fn run_error() {
+    run_file("test_data/unexpected_char.lox");
+}
