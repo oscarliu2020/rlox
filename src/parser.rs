@@ -1,6 +1,7 @@
 use crate::scanner::{token::TokenType, Literal, Token};
 
 pub mod ast;
+pub mod interpreter;
 pub struct Parser<'a> {
     tokens: &'a [Token],
     current: usize,
@@ -93,6 +94,9 @@ impl<'a> Parser<'a> {
             self.consume(TokenType::RIGHT_PAREN, "ecpected ')' after expression")?;
             return Ok(ast::Expr::Grouping(Box::new(expr)));
         }
+        if self.matches([TokenType::IDENTIFIER]) {
+            todo!()
+        }
         self.error(self.peek(), "expected expression");
         Err(())
     }
@@ -180,7 +184,9 @@ mod tests {
         let content = "print true;";
         let mut scanner = crate::scanner::Scanner::new(content.to_string());
         let tokens = scanner.scan_tokens().unwrap();
-        let mut parser = Parser::new(&tokens);
+        let mut parser = Parser::new(tokens);
         let stmts = parser.parse().unwrap();
+        let interpreter = interpreter::Interpreter();
+        interpreter.interpret(&stmts);
     }
 }

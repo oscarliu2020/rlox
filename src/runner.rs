@@ -1,4 +1,4 @@
-use super::parser::{ast::Interpreter, Parser};
+use super::parser::{interpreter::Interpreter, Parser};
 use super::scanner;
 use std::fs;
 use std::io::{stdin, Write};
@@ -7,12 +7,12 @@ pub fn run(content: &str) {
     let tokens = scanner.scan_tokens().unwrap();
     let mut parser = Parser::new(tokens);
     let stmts = parser.parse().unwrap();
-    (&stmts[..]).interpret();
+    let interpreter = Interpreter();
+    interpreter.interpret(&stmts);
 }
 pub fn run_file(fname: &str) {
     let content = fs::read_to_string(fname).expect("File not found");
     run(&content);
-    // todo!();
 }
 pub fn run_prompt() {
     let mut input = String::new();
