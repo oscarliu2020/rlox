@@ -4,6 +4,11 @@ pub struct Parser<'a> {
     tokens: &'a [Token],
     current: usize,
 }
+use thiserror::Error;
+#[derive(Debug, Error)]
+#[error("ParserError")]
+#[repr(transparent)]
+pub struct ParserError();
 macro_rules! match_token {
     ($self:ident, $($token:pat_param),*) => {
         {
@@ -63,12 +68,12 @@ impl<'a> Parser<'a> {
             eprintln!("[line {}] Error at '{}': {}", t.line, t.lexeme, msg);
         }
     }
-    fn consume(&mut self, ty: TokenType, msg: &str) -> Result<Token, ()> {
+    fn consume(&mut self, ty: TokenType, msg: &str) -> Result<Token, ParserError> {
         if self.check(&ty) {
             return Ok(self.advance().clone());
         }
         self.error(self.peek(), msg);
-        Err(())
+        Err(ParserError())
     }
     fn synchronize(&mut self) {
         self.advance();
@@ -91,7 +96,7 @@ impl<'a> Parser<'a> {
             }
         }
     }
-    fn primary(&mut self) -> Result<ast::Expr, ()> {
+    fn primary(&mut self) -> Result<ast::Expr, ParserError> {
         if self.matches([TokenType::FALSE]) {
             return Ok(ast::Expr::Literal(Literal::Boolean(false)));
         }
@@ -101,7 +106,9 @@ impl<'a> Parser<'a> {
         if self.matches([TokenType::NIL]) {
             return Ok(ast::Expr::Literal(Literal::Nil));
         }
-        if self.matches([TokenType::NUMBER, TokenType::STRING]) {
+        if
+        /*self.matches([TokenType::NUMBER, TokenType::STRING])*/
+        match_token!(self, TokenType::NUMBER, TokenType::STRING) {
             return Ok(ast::Expr::Literal(self.previous().literal.clone().unwrap()));
         }
         if self.matches([TokenType::LEFT_PAREN]) {
@@ -113,9 +120,9 @@ impl<'a> Parser<'a> {
             return Ok(ast::Expr::Variable(self.previous().clone()));
         }
         self.error(self.peek(), "expected expression");
-        Err(())
+        Err(ParserError())
     }
-    fn unary(&mut self) -> Result<ast::Expr, ()> {
+    fn unary(&mut self) -> Result<ast::Expr, ParserError> {
         if self.matches([TokenType::BANG, TokenType::MINUS]) {
             let operator = self.previous().clone();
             let right = self.unary()?;
@@ -123,7 +130,7 @@ impl<'a> Parser<'a> {
         }
         self.primary()
     }
-    fn factor(&mut self) -> Result<ast::Expr, ()> {
+    fn factor(&mut self) -> Result<ast::Expr, ParserError> {
         let mut expr = self.unary()?;
         while self.matches([TokenType::SLASH, TokenType::STAR]) {
             let operator = self.previous().clone();
@@ -132,7 +139,7 @@ impl<'a> Parser<'a> {
         }
         Ok(expr)
     }
-    fn term(&mut self) -> Result<ast::Expr, ()> {
+    fn term(&mut self) -> Result<ast::Expr, ParserError> {
         let mut expr = self.factor()?;
         while self.matches([TokenType::PLUS, TokenType::MINUS]) {
             let operator = self.previous().clone();
@@ -141,7 +148,7 @@ impl<'a> Parser<'a> {
         }
         Ok(expr)
     }
-    fn comparison(&mut self) -> Result<ast::Expr, ()> {
+    fn comparison(&mut self) -> Result<ast::Expr, ParserError> {
         let mut expr = self.term()?;
         while self.matches([
             TokenType::GREATER,
@@ -155,7 +162,7 @@ impl<'a> Parser<'a> {
         }
         Ok(expr)
     }
-    fn equality(&mut self) -> Result<ast::Expr, ()> {
+    fn equality(&mut self) -> Result<ast::Expr, ParserError> {
         let mut expr = self.comparison()?;
         while self.matches([TokenType::BANG_EQUAL, TokenType::EQUAL_EQUAL]) {
             let operator = self.previous().clone();
@@ -164,7 +171,7 @@ impl<'a> Parser<'a> {
         }
         Ok(expr)
     }
-    fn assignment(&mut self) -> Result<ast::Expr, ()> {
+    fn assignment(&mut self) -> Result<ast::Expr, ParserError> {
         let expr = self.equality()?;
         if self.matches([TokenType::EQUAL]) {
             let equals = self.previous().clone();
@@ -175,35 +182,35 @@ impl<'a> Parser<'a> {
                 }
                 _ => {
                     self.error(&equals, "Invalid assignment target");
-                    return Err(());
+                    return Err(ParserError());
                 }
             }
         }
         Ok(expr)
     }
-    fn expression(&mut self) -> Result<ast::Expr, ()> {
+    fn expression(&mut self) -> Result<ast::Expr, ParserError> {
         self.assignment()
     }
-    fn expression_statement(&mut self) -> Result<ast::Stmt, ()> {
+    fn expression_statement(&mut self) -> Result<ast::Stmt, ParserError> {
         let value = self.expression()?;
         self.consume(TokenType::SEMICOLON, "expected ';' after value")?;
         Ok(ast::Stmt::Expression(value))
     }
-    fn print_statement(&mut self) -> Result<ast::Stmt, ()> {
+    fn print_statement(&mut self) -> Result<ast::Stmt, ParserError> {
         let value = self.expression()?;
         self.consume(TokenType::SEMICOLON, "expected ';' after value")?;
         Ok(ast::Stmt::Print(value))
     }
-    fn statement(&mut self) -> Result<ast::Stmt, ()> {
+    fn statement(&mut self) -> Result<ast::Stmt, ParserError> {
         if self.matches([TokenType::PRINT]) {
             return self.print_statement();
         }
         if match_token!(self, TokenType::LEFT_BRACE) {
-            return self.block().map(|stmts| ast::Stmt::Block(stmts));
+            return self.block().map(ast::Stmt::Block);
         }
         self.expression_statement()
     }
-    fn var_declaration(&mut self) -> Result<ast::Stmt, ()> {
+    fn var_declaration(&mut self) -> Result<ast::Stmt, ParserError> {
         let name = self.consume(TokenType::IDENTIFIER, "expected variable name")?;
         let initializer = if self.matches([TokenType::EQUAL]) {
             Some(self.expression()?)
@@ -230,7 +237,7 @@ impl<'a> Parser<'a> {
             }
         }
     }
-    pub fn block(&mut self) -> Result<Vec<ast::Stmt>, ()> {
+    pub fn block(&mut self) -> Result<Vec<ast::Stmt>, ParserError> {
         let mut stmts = vec![];
         while !self.check(&TokenType::RIGHT_BRACE) && !self.is_at_end() {
             stmts.push(self.declaration().unwrap());
@@ -238,7 +245,7 @@ impl<'a> Parser<'a> {
         self.consume(TokenType::RIGHT_BRACE, "expected '}' after block")?;
         Ok(stmts)
     }
-    pub fn parse(&mut self) -> Result<Vec<Option<ast::Stmt>>, ()> {
+    pub fn parse(&mut self) -> Result<Vec<Option<ast::Stmt>>, ParserError> {
         let mut stmts = vec![];
         while !self.is_at_end() {
             stmts.push(self.declaration());
