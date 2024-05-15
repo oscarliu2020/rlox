@@ -1,10 +1,26 @@
-use crate::scanner::{token::TokenType, Literal, Token};
-
-pub mod ast;
-pub mod interpreter;
+use super::ast;
+use super::token::{Literal, Token, TokenType};
 pub struct Parser<'a> {
     tokens: &'a [Token],
     current: usize,
+}
+macro_rules! match_token {
+    ($self:ident, $($token:pat_param),*) => {
+        {
+            if $self.is_at_end() {
+                false
+            } else {
+                match $self.peek().token_type {
+                    $($token)|* => {
+                        $self.advance();
+                        true
+                    }
+                    _ => false
+                }
+            }
+
+        }
+    };
 }
 impl<'a> Parser<'a> {
     pub fn new(tokens: &'a [Token]) -> Self {
@@ -47,10 +63,9 @@ impl<'a> Parser<'a> {
             eprintln!("[line {}] Error at '{}': {}", t.line, t.lexeme, msg);
         }
     }
-    fn consume(&mut self, ty: TokenType, msg: &str) -> Result<(), ()> {
+    fn consume(&mut self, ty: TokenType, msg: &str) -> Result<Token, ()> {
         if self.check(&ty) {
-            self.advance();
-            return Ok(());
+            return Ok(self.advance().clone());
         }
         self.error(self.peek(), msg);
         Err(())
@@ -95,7 +110,7 @@ impl<'a> Parser<'a> {
             return Ok(ast::Expr::Grouping(Box::new(expr)));
         }
         if self.matches([TokenType::IDENTIFIER]) {
-            todo!()
+            return Ok(ast::Expr::Variable(self.previous().clone()));
         }
         self.error(self.peek(), "expected expression");
         Err(())
@@ -149,8 +164,25 @@ impl<'a> Parser<'a> {
         }
         Ok(expr)
     }
+    fn assignment(&mut self) -> Result<ast::Expr, ()> {
+        let expr = self.equality()?;
+        if self.matches([TokenType::EQUAL]) {
+            let equals = self.previous().clone();
+            let value = self.assignment()?;
+            match expr {
+                ast::Expr::Variable(name) => {
+                    return Ok(ast::Expr::Assign(name, Box::new(value)));
+                }
+                _ => {
+                    self.error(&equals, "Invalid assignment target");
+                    return Err(());
+                }
+            }
+        }
+        Ok(expr)
+    }
     fn expression(&mut self) -> Result<ast::Expr, ()> {
-        self.equality()
+        self.assignment()
     }
     fn expression_statement(&mut self) -> Result<ast::Stmt, ()> {
         let value = self.expression()?;
@@ -166,12 +198,50 @@ impl<'a> Parser<'a> {
         if self.matches([TokenType::PRINT]) {
             return self.print_statement();
         }
+        if match_token!(self, TokenType::LEFT_BRACE) {
+            return self.block().map(|stmts| ast::Stmt::Block(stmts));
+        }
         self.expression_statement()
     }
-    pub fn parse(&mut self) -> Result<Vec<ast::Stmt>, ()> {
+    fn var_declaration(&mut self) -> Result<ast::Stmt, ()> {
+        let name = self.consume(TokenType::IDENTIFIER, "expected variable name")?;
+        let initializer = if self.matches([TokenType::EQUAL]) {
+            Some(self.expression()?)
+        } else {
+            None
+        };
+        self.consume(
+            TokenType::SEMICOLON,
+            "expected ';' after variable declaration",
+        )?;
+        Ok(ast::Stmt::Var(name.clone(), initializer))
+    }
+    fn declaration(&mut self) -> Option<ast::Stmt> {
+        let res = if self.matches([TokenType::VAR]) {
+            self.var_declaration()
+        } else {
+            self.statement()
+        };
+        match res {
+            Ok(stmt) => Some(stmt),
+            Err(_) => {
+                self.synchronize();
+                None
+            }
+        }
+    }
+    pub fn block(&mut self) -> Result<Vec<ast::Stmt>, ()> {
+        let mut stmts = vec![];
+        while !self.check(&TokenType::RIGHT_BRACE) && !self.is_at_end() {
+            stmts.push(self.declaration().unwrap());
+        }
+        self.consume(TokenType::RIGHT_BRACE, "expected '}' after block")?;
+        Ok(stmts)
+    }
+    pub fn parse(&mut self) -> Result<Vec<Option<ast::Stmt>>, ()> {
         let mut stmts = vec![];
         while !self.is_at_end() {
-            stmts.push(self.statement()?);
+            stmts.push(self.declaration());
         }
         Ok(stmts)
     }
@@ -179,14 +249,15 @@ impl<'a> Parser<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::interpreter::Interpreter;
     #[test]
     fn test_parse() {
         let content = "print true;";
-        let mut scanner = crate::scanner::Scanner::new(content.to_string());
+        let mut scanner = super::super::tokenizer::Tokenizer::new(content.to_string());
         let tokens = scanner.scan_tokens().unwrap();
         let mut parser = Parser::new(tokens);
         let stmts = parser.parse().unwrap();
-        let interpreter = interpreter::Interpreter();
+        let mut interpreter = Interpreter::default();
         interpreter.interpret(&stmts);
     }
 }

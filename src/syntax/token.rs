@@ -1,3 +1,4 @@
+use std::fmt::{self, Display};
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenType {
@@ -74,4 +75,46 @@ lazy_static! {
         keywords.insert("while", WHILE);
         keywords
     };
+}
+#[derive(Debug, Clone, PartialEq)]
+pub enum Literal {
+    Number(f64),
+    String(String),
+    Boolean(bool),
+    Nil,
+}
+impl Display for Literal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Literal::Nil => write!(f, "nil"),
+            Literal::Boolean(b) => write!(f, "{}", b),
+            Literal::Number(n) => write!(f, "{:.}", *n),
+            Literal::String(s) => write!(f, "\"{}\"", s),
+        }
+    }
+}
+impl Literal {
+    pub fn is_truthy(&self) -> bool {
+        match self {
+            Literal::Nil => false,
+            Literal::Boolean(b) => *b,
+            _ => true,
+        }
+    }
+}
+#[derive(Debug, Clone)]
+pub struct Token {
+    pub token_type: TokenType,
+    pub lexeme: String,
+    pub literal: Option<Literal>,
+    pub line: usize,
+}
+impl fmt::Display for Token {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{:?} {} {:?}",
+            self.token_type, self.lexeme, self.literal
+        )
+    }
 }

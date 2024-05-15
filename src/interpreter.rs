@@ -1,44 +1,56 @@
-use super::ast::{Expr, Stmt};
-use crate::scanner::{token::TokenType, Literal, Token};
+use crate::syntax::ast::{Expr, ExprVisitor, Stmt, StmtVisitor};
+use crate::syntax::token::{Literal, Token, TokenType};
 fn error(t: &Token, msg: &str) {
     println!("[Runtime Error]line {}: {} ** {msg}", t.line, t.lexeme);
 }
-trait ExprVisitor {
-    fn visit_binary(&self, token: &Token, e1: &Expr, e2: &Expr) -> Result<Literal, ()>;
-    fn visit_grouping(&self, expr: &Expr) -> Result<Literal, ()>;
-    fn visit_literal(&self, ltr: &Literal) -> Result<Literal, ()>;
-    fn visit_unary(&self, token: &Token, expr: &Expr) -> Result<Literal, ()>;
+
+#[derive(Default)]
+pub struct Interpreter {
+    environment: Environment,
 }
-trait StmtVisitor {
-    fn visit_expression(&self, expr: &Expr) -> Result<(), ()>;
-    fn visit_print(&self, expr: &Expr) -> Result<(), ()>;
-}
-pub struct Interpreter();
 impl Interpreter {
-    pub fn interpret(&self, stmts: &[Stmt]) {
+    pub fn interpret(&mut self, stmts: &[Option<Stmt>]) {
         for stmt in stmts {
-            if let Err(_) = self.execute(stmt) {
+            if self.execute(stmt.as_ref().unwrap()).is_err() {
                 break;
             }
         }
     }
-    fn evaluate(&self, expr: &Expr) -> Result<Literal, ()> {
+    fn evaluate(&mut self, expr: &Expr) -> Result<Literal, ()> {
         match expr {
             Expr::Literal(ltr) => self.visit_literal(ltr),
             Expr::Grouping(expr) => self.visit_grouping(expr),
             Expr::Unary(token, expr) => self.visit_unary(token, expr),
             Expr::Binary(e1, token, e2) => self.visit_binary(token, e1, e2),
+            Expr::Variable(token) => self.visit_variable(token),
+            Expr::Assign(token, expr) => self.visit_assign(token, expr),
         }
     }
-    fn execute(&self, stmt: &Stmt) -> Result<(), ()> {
+    fn execute(&mut self, stmt: &Stmt) -> Result<(), ()> {
         match stmt {
+            Stmt::Block(stmts) => self.visit_block(stmts),
             Stmt::Expression(expr) => self.visit_expression(expr),
             Stmt::Print(expr) => self.visit_print(expr),
+            Stmt::Var(token, expr) => self.visit_var(token, expr.as_ref()),
         }
+    }
+    fn execute_block(&mut self, stmts: &[Stmt]) -> Result<(), ()> {
+        let prev = self.environment.clone();
+        self.environment = Environment::new(Some(Box::new(prev)));
+        for stmt in stmts {
+            if self.execute(stmt).is_err() {
+                break;
+            }
+        }
+        self.environment = *self.environment.enclosing.take().unwrap();
+        Ok(())
     }
 }
 impl StmtVisitor for Interpreter {
-    fn visit_expression(&self, expr: &Expr) -> Result<(), ()> {
+    fn visit_block(&mut self, stmts: &[Stmt]) -> Result<(), ()> {
+        self.execute_block(stmts)
+    }
+    fn visit_expression(&mut self, expr: &Expr) -> Result<(), ()> {
         if let Ok(literal) = self.evaluate(expr) {
             println!("{}", literal);
             Ok(())
@@ -46,23 +58,35 @@ impl StmtVisitor for Interpreter {
             Err(())
         }
     }
-    fn visit_print(&self, expr: &Expr) -> Result<(), ()> {
+    fn visit_print(&mut self, expr: &Expr) -> Result<(), ()> {
         if let Ok(literal) = self.evaluate(expr) {
             println!("{}", literal);
             Ok(())
         } else {
             Err(())
         }
+    }
+    fn visit_var(&mut self, token: &Token, expr: Option<&Expr>) -> Result<(), ()> {
+        let value = if let Some(expr) = expr {
+            self.evaluate(expr)?
+        } else {
+            Literal::Nil
+        };
+        self.environment.define(token.lexeme.clone(), value);
+        Ok(())
     }
 }
 impl ExprVisitor for Interpreter {
-    fn visit_literal(&self, ltr: &Literal) -> Result<Literal, ()> {
+    fn visit_literal(&mut self, ltr: &Literal) -> Result<Literal, ()> {
         Ok(ltr.clone())
     }
-    fn visit_grouping(&self, expr: &Expr) -> Result<Literal, ()> {
+    fn visit_variable(&mut self, token: &Token) -> Result<Literal, ()> {
+        self.environment.get(token)
+    }
+    fn visit_grouping(&mut self, expr: &Expr) -> Result<Literal, ()> {
         self.evaluate(expr)
     }
-    fn visit_unary(&self, token: &Token, expr: &Expr) -> Result<Literal, ()> {
+    fn visit_unary(&mut self, token: &Token, expr: &Expr) -> Result<Literal, ()> {
         let right = self.evaluate(expr)?;
         match token.token_type {
             TokenType::MINUS => match right {
@@ -79,7 +103,7 @@ impl ExprVisitor for Interpreter {
             }
         }
     }
-    fn visit_binary(&self, token: &Token, e1: &Expr, e2: &Expr) -> Result<Literal, ()> {
+    fn visit_binary(&mut self, token: &Token, e1: &Expr, e2: &Expr) -> Result<Literal, ()> {
         let l = self.evaluate(e1)?;
         let r = self.evaluate(e2)?;
         match token.token_type {
@@ -146,5 +170,87 @@ impl ExprVisitor for Interpreter {
                 Err(())
             }
         }
+    }
+    fn visit_assign(&mut self, token: &Token, expr: &Expr) -> Result<Literal, ()> {
+        let value = self.evaluate(expr)?;
+        self.environment.assign(token, value.clone())?;
+        Ok(value)
+    }
+}
+use rustc_hash::FxHashMap;
+#[derive(Default, Clone)]
+pub struct Environment {
+    values: FxHashMap<String, Literal>,
+    enclosing: Option<Box<Environment>>,
+}
+impl Environment {
+    pub fn new(enclosing: Option<Box<Environment>>) -> Self {
+        Self {
+            values: FxHashMap::default(),
+            enclosing,
+        }
+    }
+    pub fn define(&mut self, name: String, value: Literal) {
+        self.values.insert(name, value);
+    }
+    pub fn get(&self, name: &Token) -> Result<Literal, ()> {
+        self.values
+            .get(&name.lexeme)
+            .cloned()
+            .or_else(|| {
+                self.enclosing
+                    .as_ref()
+                    .and_then(|enclosing| enclosing.get(name).ok())
+            })
+            .ok_or_else(|| {
+                error(name, "Undefined variable");
+            })
+    }
+    pub fn assign(&mut self, name: &Token, value: Literal) -> Result<(), ()> {
+        self.values
+            .get_mut(&name.lexeme)
+            .map(|v| {
+                *v = value.clone();
+            })
+            .or_else(|| {
+                self.enclosing
+                    .as_mut()
+                    .and_then(|enclosing| enclosing.assign(name, value).ok())
+            })
+            .ok_or_else(|| {
+                error(name, "Undefined variable");
+            })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runner::run;
+    #[test]
+    fn test_block() {
+        let mut interpreter = Interpreter::default();
+        run(
+            r#"var a = "global a";
+        var b = "global b";
+        var c = "global c";
+        {
+          var a = "outer a";
+          var b = "outer b";
+          {
+            var a = "inner a";
+            print a;
+            print b;
+            print c;
+          }
+          print a;
+          print b;
+          print c;
+        }
+        print a;
+        print b;
+        print c;"#,
+            &mut interpreter,
+        );
     }
 }

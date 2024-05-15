@@ -1,5 +1,3 @@
-pub mod parser;
+pub mod interpreter;
 pub mod runner;
-pub mod scanner;
-
-type Result<T> = std::result::Result<T, (usize, &'static str)>;
+pub mod syntax;

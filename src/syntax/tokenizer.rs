@@ -1,13 +1,22 @@
-use super::Result;
-use std::fmt::{self, Display};
-pub struct Scanner {
+use super::token;
+// use crate::Result;
+use thiserror::Error;
+use token::{Literal, Token};
+#[derive(Error, Debug)]
+pub enum TokenizerError {
+    #[error("Error at line {0}")]
+    UnterminatedString(usize),
+    #[error("Unexpected character at line {0}")]
+    UnexpectedCharacter(usize),
+}
+pub struct Tokenizer {
     source: Vec<char>,
     tokens: Vec<Token>,
     start: usize,
     current: usize,
     line: usize,
 }
-impl Scanner {
+impl Tokenizer {
     pub fn new(source: String) -> Self {
         Self {
             source: source.chars().collect(),
@@ -47,7 +56,7 @@ impl Scanner {
             .copied()
             .unwrap_or(b'\0' as char)
     }
-    fn string(&mut self) -> Result<()> {
+    fn string(&mut self) -> Result<(), TokenizerError> {
         while (self.peek() != '"') && !self.is_at_end() {
             if self.peek() == '\n' {
                 self.line += 1;
@@ -55,7 +64,7 @@ impl Scanner {
             self.advance();
         }
         if self.is_at_end() {
-            return Err((self.line, "Unterminated string"));
+            return Err(TokenizerError::UnterminatedString(self.line));
         }
         // closing
         self.advance();
@@ -104,7 +113,7 @@ impl Scanner {
             .unwrap_or(&token::TokenType::IDENTIFIER);
         self.add_token(*ty)
     }
-    pub fn scan_token(&mut self) -> Result<()> {
+    pub fn scan_token(&mut self) -> Result<(), TokenizerError> {
         let c = self.advance();
         match c {
             '(' => self.add_token(token::TokenType::LEFT_PAREN),
@@ -174,7 +183,7 @@ impl Scanner {
                 self.identifier();
             }
             _ => {
-                return Err((self.line, "Unexpected character"));
+                return Err(TokenizerError::UnexpectedCharacter(self.line));
             }
         }
         Ok(())
@@ -183,7 +192,7 @@ impl Scanner {
         self.current += 1;
         self.source[self.current - 1]
     }
-    pub fn scan_tokens(&mut self) -> Result<&[Token]> {
+    pub fn scan_tokens(&mut self) -> Result<&[Token], TokenizerError> {
         while !self.is_at_end() {
             self.start = self.current;
             self.scan_token()?;
@@ -201,81 +210,39 @@ impl Scanner {
         self.current >= self.source.len()
     }
 }
-pub mod token;
-#[derive(Debug, Clone, PartialEq)]
-pub enum Literal {
-    Number(f64),
-    String(String),
-    Boolean(bool),
-    Nil,
-}
-impl Display for Literal {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Literal::Nil => write!(f, "nil"),
-            Literal::Boolean(b) => write!(f, "{}", b),
-            Literal::Number(n) => write!(f, "{:.}", *n),
-            Literal::String(s) => write!(f, "\"{}\"", s),
-        }
-    }
-}
-impl Literal {
-    pub fn is_truthy(&self) -> bool {
-        match self {
-            Literal::Nil => false,
-            Literal::Boolean(b) => *b,
-            _ => true,
-        }
-    }
-}
-#[derive(Debug, Clone)]
-pub struct Token {
-    pub token_type: token::TokenType,
-    pub lexeme: String,
-    pub literal: Option<Literal>,
-    pub line: usize,
-}
-impl fmt::Display for Token {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{:?} {} {:?}",
-            self.token_type, self.lexeme, self.literal
-        )
-    }
-}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
     fn test_scanner() {
-        let mut scanner = Scanner::new("(abc=a+b)".to_string());
+        let mut scanner = Tokenizer::new("(abc=a+b)".to_string());
         println!("{:?}", scanner.scan_tokens().unwrap());
     }
     #[test]
     fn test_string() {
-        let mut scanner = Scanner::new("\"abc\"".to_string());
+        let mut scanner = Tokenizer::new("\"abc\"".to_string());
         println!("{:?}", scanner.scan_tokens().unwrap());
     }
     #[test]
     fn test_number() {
-        let mut scanner = Scanner::new(".1234".to_string());
+        let mut scanner = Tokenizer::new(".1234".to_string());
         println!("{:?}", scanner.scan_tokens());
     }
     #[test]
     fn test_ident_and_keyw() {
-        let mut scanner = Scanner::new("andand_ //abcde_\na".to_string());
+        let mut scanner = Tokenizer::new("andand_ //abcde_\na".to_string());
         println!("{:?}", scanner.scan_tokens());
     }
     #[test]
     fn test_paren() {
-        let mut scanner = Scanner::new(r#"print("Hello, World")"#.to_string());
+        let mut scanner = Tokenizer::new(r#"print("Hello, World")"#.to_string());
 
         println!("{:#?}", scanner.scan_tokens());
     }
     #[test]
     fn test_fail() {
-        let mut scanner = Scanner::new("1+1=2\n\"abc\u{4e00}".to_string());
+        let mut scanner = Tokenizer::new("1+1=2\n\"abc".to_string());
         println!("{:?}", scanner.scan_tokens().unwrap_err());
     }
 }
