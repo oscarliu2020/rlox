@@ -10,6 +10,9 @@ use thiserror::Error;
 #[repr(transparent)]
 pub struct ParserError();
 macro_rules! match_token {
+    ($self:ident, [$($token:pat_param),*]) => {
+        match_token!($self, $($token),*)
+    };
     ($self:ident, $($token:pat_param),*) => {
         {
             if $self.is_at_end() {
@@ -28,38 +31,35 @@ macro_rules! match_token {
     };
 }
 impl<'a> Parser<'a> {
+    #[inline]
     pub fn new(tokens: &'a [Token]) -> Self {
         Self { tokens, current: 0 }
     }
+    #[inline]
     fn peek(&self) -> &Token {
         &self.tokens[self.current]
     }
+    #[inline]
     fn is_at_end(&self) -> bool {
         return self.peek().token_type == TokenType::EOF;
     }
+    #[inline]
     fn previous(&self) -> &Token {
         &self.tokens[self.current - 1]
     }
+    #[inline]
     fn advance(&mut self) -> &Token {
         if !self.is_at_end() {
             self.current += 1;
         }
         self.previous()
     }
+    #[inline]
     fn check(&self, ty: &TokenType) -> bool {
         if self.is_at_end() {
             return false;
         }
         return self.peek().token_type == *ty;
-    }
-    fn matches<const N: usize>(&mut self, types: [TokenType; N]) -> bool {
-        for ty in types.iter() {
-            if self.check(ty) {
-                self.advance();
-                return true;
-            }
-        }
-        false
     }
     #[inline]
     fn error(&self, t: &Token, msg: &str) {
@@ -99,33 +99,31 @@ impl<'a> Parser<'a> {
         }
     }
     fn primary(&mut self) -> Result<ast::Expr, ParserError> {
-        if self.matches([TokenType::FALSE]) {
+        if match_token!(self, [TokenType::FALSE]) {
             return Ok(ast::Expr::Literal(Literal::Boolean(false)));
         }
-        if self.matches([TokenType::TRUE]) {
+        if match_token!(self, [TokenType::TRUE]) {
             return Ok(ast::Expr::Literal(Literal::Boolean(true)));
         }
-        if self.matches([TokenType::NIL]) {
+        if match_token!(self, [TokenType::NIL]) {
             return Ok(ast::Expr::Literal(Literal::Nil));
         }
-        if
-        /*self.matches([TokenType::NUMBER, TokenType::STRING])*/
-        match_token!(self, TokenType::NUMBER, TokenType::STRING) {
+        if match_token!(self, [TokenType::NUMBER, TokenType::STRING]) {
             return Ok(ast::Expr::Literal(self.previous().literal.clone().unwrap()));
         }
-        if self.matches([TokenType::LEFT_PAREN]) {
+        if match_token!(self, [TokenType::LEFT_PAREN]) {
             let expr = self.expression()?;
             self.consume(TokenType::RIGHT_PAREN, "ecpected ')' after expression")?;
             return Ok(ast::Expr::Grouping(Box::new(expr)));
         }
-        if self.matches([TokenType::IDENTIFIER]) {
+        if match_token!(self, [TokenType::IDENTIFIER]) {
             return Ok(ast::Expr::Variable(self.previous().clone()));
         }
         self.error(self.peek(), "expected expression");
         Err(ParserError())
     }
     fn unary(&mut self) -> Result<ast::Expr, ParserError> {
-        if self.matches([TokenType::BANG, TokenType::MINUS]) {
+        if match_token!(self, [TokenType::BANG, TokenType::MINUS]) {
             let operator = self.previous().clone();
             let right = self.unary()?;
             return Ok(ast::Expr::Unary(operator, Box::new(right)));
@@ -134,7 +132,7 @@ impl<'a> Parser<'a> {
     }
     fn factor(&mut self) -> Result<ast::Expr, ParserError> {
         let mut expr = self.unary()?;
-        while self.matches([TokenType::SLASH, TokenType::STAR]) {
+        while match_token!(self, [TokenType::SLASH, TokenType::STAR]) {
             let operator = self.previous().clone();
             let right = self.unary()?;
             expr = ast::Expr::Binary(Box::new(expr), operator, Box::new(right));
@@ -143,7 +141,7 @@ impl<'a> Parser<'a> {
     }
     fn term(&mut self) -> Result<ast::Expr, ParserError> {
         let mut expr = self.factor()?;
-        while self.matches([TokenType::PLUS, TokenType::MINUS]) {
+        while match_token!(self, [TokenType::PLUS, TokenType::MINUS]) {
             let operator = self.previous().clone();
             let right = self.factor()?;
             expr = ast::Expr::Binary(Box::new(expr), operator, Box::new(right));
@@ -152,12 +150,15 @@ impl<'a> Parser<'a> {
     }
     fn comparison(&mut self) -> Result<ast::Expr, ParserError> {
         let mut expr = self.term()?;
-        while self.matches([
-            TokenType::GREATER,
-            TokenType::GREATER_EQUAL,
-            TokenType::LESS,
-            TokenType::LESS_EQUAL,
-        ]) {
+        while match_token!(
+            self,
+            [
+                TokenType::GREATER,
+                TokenType::GREATER_EQUAL,
+                TokenType::LESS,
+                TokenType::LESS_EQUAL
+            ]
+        ) {
             let operator = self.previous().clone();
             let right = self.term()?;
             expr = ast::Expr::Binary(Box::new(expr), operator, Box::new(right));
@@ -166,7 +167,7 @@ impl<'a> Parser<'a> {
     }
     fn equality(&mut self) -> Result<ast::Expr, ParserError> {
         let mut expr = self.comparison()?;
-        while self.matches([TokenType::BANG_EQUAL, TokenType::EQUAL_EQUAL]) {
+        while match_token!(self, [TokenType::BANG_EQUAL, TokenType::EQUAL_EQUAL]) {
             let operator = self.previous().clone();
             let right = self.comparison()?;
             expr = ast::Expr::Binary(Box::new(expr), operator, Box::new(right));
@@ -175,7 +176,7 @@ impl<'a> Parser<'a> {
     }
     fn assignment(&mut self) -> Result<ast::Expr, ParserError> {
         let expr = self.equality()?;
-        if self.matches([TokenType::EQUAL]) {
+        if match_token!(self, [TokenType::EQUAL]) {
             let equals = self.previous().clone();
             let value = self.assignment()?;
             match expr {
@@ -204,7 +205,7 @@ impl<'a> Parser<'a> {
         Ok(ast::Stmt::Print(value))
     }
     fn statement(&mut self) -> Result<ast::Stmt, ParserError> {
-        if self.matches([TokenType::PRINT]) {
+        if match_token!(self, [TokenType::PRINT]) {
             return self.print_statement();
         }
         if match_token!(self, TokenType::LEFT_BRACE) {
@@ -214,7 +215,7 @@ impl<'a> Parser<'a> {
     }
     fn var_declaration(&mut self) -> Result<ast::Stmt, ParserError> {
         let name = self.consume(TokenType::IDENTIFIER, "expected variable name")?;
-        let initializer = if self.matches([TokenType::EQUAL]) {
+        let initializer = if match_token!(self, [TokenType::EQUAL]) {
             Some(self.expression()?)
         } else {
             None
@@ -226,7 +227,7 @@ impl<'a> Parser<'a> {
         Ok(ast::Stmt::Var(name.clone(), initializer))
     }
     fn declaration(&mut self) -> Option<ast::Stmt> {
-        let res = if self.matches([TokenType::VAR]) {
+        let res = if match_token!(self, [TokenType::VAR]) {
             self.var_declaration()
         } else {
             self.statement()
