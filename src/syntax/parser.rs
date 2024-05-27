@@ -61,6 +61,7 @@ impl<'a> Parser<'a> {
         }
         false
     }
+    #[inline]
     fn error(&self, t: &Token, msg: &str) {
         if t.token_type == TokenType::EOF {
             eprintln!("[line {}] Error at end: {}", t.line, msg);
@@ -68,6 +69,7 @@ impl<'a> Parser<'a> {
             eprintln!("[line {}] Error at '{}': {}", t.line, t.lexeme, msg);
         }
     }
+    #[inline]
     fn consume(&mut self, ty: TokenType, msg: &str) -> Result<Token, ParserError> {
         if self.check(&ty) {
             return Ok(self.advance().clone());

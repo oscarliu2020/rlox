@@ -108,10 +108,8 @@ impl Tokenizer {
         let tt = self.source[self.start..self.current]
             .iter()
             .collect::<String>();
-        let ty = token::KEYWORDS
-            .get(tt.as_str())
-            .unwrap_or(&token::TokenType::IDENTIFIER);
-        self.add_token(*ty)
+        let ty = token::get_keywords(tt).unwrap_or(token::TokenType::IDENTIFIER);
+        self.add_token(ty)
     }
     pub fn scan_token(&mut self) -> Result<(), TokenizerError> {
         let c = self.advance();

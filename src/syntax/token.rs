@@ -51,30 +51,9 @@ pub enum TokenType {
     EOF,
 }
 
-use lazy_static::lazy_static;
-use rustc_hash::FxHashMap;
 use TokenType::*;
-lazy_static! {
-    pub(super) static ref KEYWORDS: FxHashMap<&'static str, TokenType> = {
-        let mut keywords = FxHashMap::default();
-        keywords.insert("and", AND);
-        keywords.insert("class", CLASS);
-        keywords.insert("else", ELSE);
-        keywords.insert("false", FALSE);
-        keywords.insert("for", FOR);
-        keywords.insert("fun", FUN);
-        keywords.insert("if", IF);
-        keywords.insert("nil", NIL);
-        keywords.insert("or", OR);
-        keywords.insert("print", PRINT);
-        keywords.insert("return", RETURN);
-        keywords.insert("super", SUPER);
-        keywords.insert("this", THIS);
-        keywords.insert("true", TRUE);
-        keywords.insert("var", VAR);
-        keywords.insert("while", WHILE);
-        keywords
-    };
+pub fn get_keywords(s: impl AsRef<str>) -> Option<TokenType> {
+    get_keyword_impl(s.as_ref())
 }
 #[derive(Debug, Clone, PartialEq)]
 pub enum Literal {
@@ -118,3 +97,32 @@ impl fmt::Display for Token {
         )
     }
 }
+
+macro_rules! define_keywords {
+    ($($x:expr => $y:ident),* $(,)?) => {
+        fn get_keyword_impl(keyword:&str)->Option<TokenType>{
+            match keyword {
+                $($x=>Some($y),)*
+                _=>None
+            }
+        }
+    };
+}
+define_keywords!(
+    "and"=>AND,
+    "class"=>CLASS,
+    "else"=>ELSE,
+    "false"=>FALSE,
+    "for"=>FOR,
+    "fun"=>FUN,
+    "if"=>IF,
+    "nil"=>NIL,
+    "or"=>OR,
+    "print"=>PRINT,
+    "return"=>RETURN,
+    "super"=>SUPER,
+    "this"=>THIS,
+    "true"=>TRUE,
+    "var"=>VAR,
+    "while"=>WHILE
+);

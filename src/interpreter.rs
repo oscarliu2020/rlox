@@ -253,4 +253,19 @@ mod tests {
             &mut interpreter,
         );
     }
+    #[test]
+    fn test_blcok2() {
+        let mut interpreter = Interpreter::default();
+        run(
+            r"
+            var a=1;
+            {
+                var a=a+3;
+                print a;
+            }
+            print a;
+        ",
+            &mut interpreter,
+        );
+    }
 }
