@@ -8,7 +8,7 @@ fn error(t: &Token, msg: &str) {
 pub struct Interpreter {
     environment: Environment,
 }
-use crate::syntax::ast::{VisitorResult,VisitorError};
+use crate::syntax::ast::{VisitorError, VisitorResult};
 impl Interpreter {
     pub fn interpret(&mut self, stmts: &[Option<Stmt>]) {
         for stmt in stmts {
@@ -85,7 +85,7 @@ impl ExprVisitor for Interpreter {
     fn visit_variable(&mut self, token: &Token) -> VisitorResult<Literal> {
         self.environment.get(token)
     }
-    fn visit_grouping(&mut self, expr: &Expr) ->VisitorResult<Literal> {
+    fn visit_grouping(&mut self, expr: &Expr) -> VisitorResult<Literal> {
         self.evaluate(expr)
     }
     fn visit_unary(&mut self, token: &Token, expr: &Expr) -> VisitorResult<Literal> {

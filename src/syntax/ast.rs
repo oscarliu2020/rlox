@@ -1,5 +1,5 @@
 use super::token::{Literal, Token};
-use std::{error, fmt::{Display, Formatter}};
+use std::fmt::{Display, Formatter};
 use thiserror::Error;
 pub enum Expr {
     Assign(Token, Box<Expr>),
@@ -46,7 +46,7 @@ pub enum VisitorError {
     #[error("Environment Error")]
     EnvironmentError,
 }
-pub type VisitorResult<T>=Result<T,VisitorError>;
+pub type VisitorResult<T> = Result<T, VisitorError>;
 pub trait ExprVisitor {
     fn visit_binary(&mut self, token: &Token, e1: &Expr, e2: &Expr) -> VisitorResult<Literal>;
     fn visit_grouping(&mut self, expr: &Expr) -> VisitorResult<Literal>;
