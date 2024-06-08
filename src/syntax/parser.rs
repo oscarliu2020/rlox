@@ -96,6 +96,7 @@ impl<'a> Parser<'a> {
                 }
                 _ => {}
             }
+            self.advance();
         }
     }
     fn primary(&mut self) -> Result<ast::Expr, ParserError> {
@@ -204,12 +205,30 @@ impl<'a> Parser<'a> {
         self.consume(TokenType::SEMICOLON, "expected ';' after value")?;
         Ok(ast::Stmt::Print(value))
     }
+    fn if_statement(&mut self) -> Result<ast::Stmt, ParserError> {
+        self.consume(TokenType::LEFT_PAREN, "expected '(' after 'if'")?;
+        let cond = self.expression()?;
+        self.consume(TokenType::RIGHT_PAREN, "expected ')' after condition")?;
+        let then_stmt = self.statement()?;
+        if match_token!(self, [TokenType::ELSE]) {
+            let else_stmt = self.statement()?;
+            Ok(ast::Stmt::IfStmt(
+                cond,
+                Box::new((then_stmt, Some(else_stmt))),
+            ))
+        } else {
+            Ok(ast::Stmt::IfStmt(cond, Box::new((then_stmt, None))))
+        }
+    }
     fn statement(&mut self) -> Result<ast::Stmt, ParserError> {
         if match_token!(self, [TokenType::PRINT]) {
             return self.print_statement();
         }
         if match_token!(self, TokenType::LEFT_BRACE) {
             return self.block().map(ast::Stmt::Block);
+        }
+        if match_token!(self, [TokenType::IF]) {
+            return self.if_statement();
         }
         self.expression_statement()
     }

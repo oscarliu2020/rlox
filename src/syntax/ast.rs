@@ -1,6 +1,7 @@
 use super::token::{Literal, Token};
 use std::fmt::{Display, Formatter};
 use thiserror::Error;
+#[non_exhaustive]
 pub enum Expr {
     Assign(Token, Box<Expr>),
     Binary(Box<Expr>, Token, Box<Expr>),
@@ -33,11 +34,13 @@ impl Display for Expr {
         }
     }
 }
+#[non_exhaustive]
 pub enum Stmt {
     Expression(Expr),
     Print(Expr),
     Var(Token, Option<Expr>),
     Block(Vec<Stmt>),
+    IfStmt(Expr, Box<(Stmt, Option<Stmt>)>),
 }
 #[derive(Error, Debug)]
 pub enum VisitorError {
@@ -60,4 +63,5 @@ pub trait StmtVisitor {
     fn visit_print(&mut self, expr: &Expr) -> VisitorResult<()>;
     fn visit_var(&mut self, token: &Token, expr: Option<&Expr>) -> VisitorResult<()>;
     fn visit_block(&mut self, stmts: &[Stmt]) -> VisitorResult<()>;
+    fn visit_if(&mut self, cond: &Expr, body: &(Stmt, Option<Stmt>)) -> VisitorResult<()>;
 }

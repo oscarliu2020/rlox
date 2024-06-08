@@ -13,12 +13,10 @@ fn test_assignment_associative() {
     run_file("test_data/assignment/associative.lox");
 }
 #[test]
-#[should_panic]
 fn test_assignment_grouping_error() {
     run_file("test_data/assignment/grouping.lox");
 }
 #[test]
-#[should_panic]
 fn test_infix_error() {
     run_file("test_data/assignment/infix.lox");
 }
@@ -30,4 +28,36 @@ fn test_syntax() {
 // #[should_panic]
 fn test_undefined() {
     run_file("test_data/assignment/undefined.lox");
+}
+#[test]
+fn test_block_empty() {
+    run_file("test_data/block/empty.lox");
+}
+#[test]
+fn test_block_scope() {
+    run_file("test_data/block/scope.lox");
+}
+#[test]
+fn test_if_dangling_else() {
+    run_file("test_data/if/dangling_else.lox");
+}
+#[test]
+fn test_if_stmt() {
+    run_file("test_data/if/if.lox");
+}
+#[test]
+fn test_if_truth() {
+    run_file("test_data/if/truth.lox");
+}
+#[test]
+fn test_else() {
+    run_file("test_data/if/else.lox");
+}
+#[test]
+fn test_var_in_else() {
+    run_file("test_data/if/var_in_else.lox");
+}
+#[test]
+fn test_var_in_else_branch() {
+    run_file("test_data/if/var_in_then.lox");
 }

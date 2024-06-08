@@ -12,7 +12,11 @@ use crate::syntax::ast::{VisitorError, VisitorResult};
 impl Interpreter {
     pub fn interpret(&mut self, stmts: &[Option<Stmt>]) {
         for stmt in stmts {
-            if self.execute(stmt.as_ref().unwrap()).is_err() {
+            let Some(stmt) = stmt.as_ref() else {
+                eprintln!("Error parsing statement");
+                break;
+            };
+            if self.execute(stmt).is_err() {
                 break;
             }
         }
@@ -33,6 +37,8 @@ impl Interpreter {
             Stmt::Expression(expr) => self.visit_expression(expr),
             Stmt::Print(expr) => self.visit_print(expr),
             Stmt::Var(token, expr) => self.visit_var(token, expr.as_ref()),
+            Stmt::IfStmt(cond, body) => self.visit_if(cond, body),
+            _ => Err(VisitorError::VistorError),
         }
     }
     fn execute_block(&mut self, stmts: &[Stmt]) -> VisitorResult<()> {
@@ -48,6 +54,14 @@ impl Interpreter {
     }
 }
 impl StmtVisitor for Interpreter {
+    fn visit_if(&mut self, cond: &Expr, body: &(Stmt, Option<Stmt>)) -> VisitorResult<()> {
+        if self.evaluate(cond)?.is_truthy() {
+            self.execute(&body.0)?;
+        } else if let Some(else_stmt) = &body.1 {
+            self.execute(else_stmt)?;
+        }
+        Ok(())
+    }
     fn visit_block(&mut self, stmts: &[Stmt]) -> VisitorResult<()> {
         self.execute_block(stmts)
     }
