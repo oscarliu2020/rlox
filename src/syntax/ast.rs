@@ -9,6 +9,7 @@ pub enum Expr {
     Literal(Literal),
     Unary(Token, Box<Expr>),
     Variable(Token),
+    Logical(Box<Expr>, Token, Box<Expr>),
 }
 impl Display for Expr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -31,6 +32,9 @@ impl Display for Expr {
             Expr::Assign(tok, expr) => {
                 write!(f, "{} = {}", tok.lexeme, expr)
             }
+            Expr::Logical(left, tok, right) => {
+                write!(f, "({} {} {})", left, tok.lexeme, right)
+            }
         }
     }
 }
@@ -41,6 +45,7 @@ pub enum Stmt {
     Var(Token, Option<Expr>),
     Block(Vec<Stmt>),
     IfStmt(Expr, Box<(Stmt, Option<Stmt>)>),
+    WhileStmt(Expr, Box<Stmt>),
 }
 #[derive(Error, Debug)]
 pub enum VisitorError {
@@ -57,8 +62,11 @@ pub trait ExprVisitor {
     fn visit_unary(&mut self, token: &Token, expr: &Expr) -> VisitorResult<Literal>;
     fn visit_variable(&mut self, token: &Token) -> VisitorResult<Literal>;
     fn visit_assign(&mut self, token: &Token, expr: &Expr) -> VisitorResult<Literal>;
+    fn visit_logical(&mut self, left: &Expr, token: &Token, right: &Expr)
+        -> VisitorResult<Literal>;
 }
 pub trait StmtVisitor {
+    fn visit_while(&mut self, cond: &Expr, body: &Stmt) -> VisitorResult<()>;
     fn visit_expression(&mut self, expr: &Expr) -> VisitorResult<()>;
     fn visit_print(&mut self, expr: &Expr) -> VisitorResult<()>;
     fn visit_var(&mut self, token: &Token, expr: Option<&Expr>) -> VisitorResult<()>;

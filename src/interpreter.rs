@@ -29,6 +29,7 @@ impl Interpreter {
             Expr::Binary(e1, token, e2) => self.visit_binary(token, e1, e2),
             Expr::Variable(token) => self.visit_variable(token),
             Expr::Assign(token, expr) => self.visit_assign(token, expr),
+            Expr::Logical(e1, token, e2) => self.visit_logical(e1, token, e2),
         }
     }
     fn execute(&mut self, stmt: &Stmt) -> VisitorResult<()> {
@@ -38,6 +39,7 @@ impl Interpreter {
             Stmt::Print(expr) => self.visit_print(expr),
             Stmt::Var(token, expr) => self.visit_var(token, expr.as_ref()),
             Stmt::IfStmt(cond, body) => self.visit_if(cond, body),
+            Stmt::WhileStmt(cond, body) => self.visit_while(cond, body),
             _ => Err(VisitorError::VistorError),
         }
     }
@@ -54,6 +56,12 @@ impl Interpreter {
     }
 }
 impl StmtVisitor for Interpreter {
+    fn visit_while(&mut self, cond: &Expr, body: &Stmt) -> VisitorResult<()> {
+        while self.evaluate(cond)?.is_truthy() {
+            self.execute(body)?;
+        }
+        Ok(())
+    }
     fn visit_if(&mut self, cond: &Expr, body: &(Stmt, Option<Stmt>)) -> VisitorResult<()> {
         if self.evaluate(cond)?.is_truthy() {
             self.execute(&body.0)?;
@@ -66,12 +74,13 @@ impl StmtVisitor for Interpreter {
         self.execute_block(stmts)
     }
     fn visit_expression(&mut self, expr: &Expr) -> VisitorResult<()> {
-        if let Ok(literal) = self.evaluate(expr) {
-            println!("{}", literal);
-            Ok(())
-        } else {
-            Err(VisitorError::VistorError)
-        }
+        // if let Ok(literal) = self.evaluate(expr) {
+        //     // println!("{}", literal);
+        //     Ok(())
+        // } else {
+        //     Err(VisitorError::VistorError)
+        // }
+        self.evaluate(expr).map(|_| ())
     }
     fn visit_print(&mut self, expr: &Expr) -> VisitorResult<()> {
         if let Ok(literal) = self.evaluate(expr) {
@@ -93,6 +102,31 @@ impl StmtVisitor for Interpreter {
 }
 
 impl ExprVisitor for Interpreter {
+    fn visit_logical(
+        &mut self,
+        left: &Expr,
+        token: &Token,
+        right: &Expr,
+    ) -> VisitorResult<Literal> {
+        let l = self.evaluate(left)?;
+        match token.token_type {
+            TokenType::OR => {
+                if l.is_truthy() {
+                    return Ok(l);
+                }
+            }
+            TokenType::AND => {
+                if !l.is_truthy() {
+                    return Ok(l);
+                }
+            }
+            _ => {
+                error(token, "Unknown logical operator");
+                return Err(VisitorError::VistorError);
+            }
+        }
+        self.evaluate(right)
+    }
     fn visit_literal(&mut self, ltr: &Literal) -> VisitorResult<Literal> {
         Ok(ltr.clone())
     }
@@ -282,6 +316,37 @@ mod tests {
                 print a;
             }
             print a;
+        ",
+            &mut interpreter,
+        );
+    }
+    #[test]
+    fn test_while() {
+        let mut interpreter = Interpreter::default();
+        run(
+            r"
+            var a=1;
+            while(a<10){
+                print a;
+                a=a+1;
+            }
+        ",
+            &mut interpreter,
+        );
+    }
+    #[test]
+    fn test_for() {
+        let mut interpreter = Interpreter::default();
+        run(
+            r"
+            var a = 0;
+            var temp;
+
+            for (var b = 1; a < 10000; b = temp + b) {
+            print a;
+            temp = a;
+            a = b;
+            }
         ",
             &mut interpreter,
         );

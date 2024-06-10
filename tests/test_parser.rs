@@ -61,3 +61,11 @@ fn test_var_in_else() {
 fn test_var_in_else_branch() {
     run_file("test_data/if/var_in_then.lox");
 }
+#[test]
+fn test_precedence() {
+    run_file("test_data/precedence.lox");
+}
+#[test]
+fn test_empty() {
+    run_file("test_data/empty.lox");
+}

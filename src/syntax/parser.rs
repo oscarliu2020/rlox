@@ -175,8 +175,26 @@ impl<'a> Parser<'a> {
         }
         Ok(expr)
     }
+    fn and(&mut self) -> Result<ast::Expr, ParserError> {
+        let mut expr = self.equality()?;
+        while match_token!(self, [TokenType::AND]) {
+            let operator = self.previous().clone();
+            let right = self.equality()?;
+            expr = ast::Expr::Logical(Box::new(expr), operator, Box::new(right));
+        }
+        Ok(expr)
+    }
+    fn or(&mut self) -> Result<ast::Expr, ParserError> {
+        let mut expr = self.and()?;
+        while match_token!(self, [TokenType::OR]) {
+            let operator = self.previous().clone();
+            let right = self.and()?;
+            expr = ast::Expr::Logical(Box::new(expr), operator, Box::new(right));
+        }
+        Ok(expr)
+    }
     fn assignment(&mut self) -> Result<ast::Expr, ParserError> {
-        let expr = self.equality()?;
+        let expr = self.or()?;
         if match_token!(self, [TokenType::EQUAL]) {
             let equals = self.previous().clone();
             let value = self.assignment()?;
@@ -190,6 +208,7 @@ impl<'a> Parser<'a> {
                 }
             }
         }
+
         Ok(expr)
     }
     fn expression(&mut self) -> Result<ast::Expr, ParserError> {
@@ -220,6 +239,50 @@ impl<'a> Parser<'a> {
             Ok(ast::Stmt::IfStmt(cond, Box::new((then_stmt, None))))
         }
     }
+    fn while_statement(&mut self) -> Result<ast::Stmt, ParserError> {
+        self.consume(TokenType::LEFT_PAREN, "expected '(' after 'while'")?;
+        let cond = self.expression()?;
+        self.consume(TokenType::RIGHT_PAREN, "expected ')' after condition")?;
+        let body = self.statement()?;
+        Ok(ast::Stmt::WhileStmt(cond, Box::new(body)))
+    }
+    fn for_statement(&mut self) -> Result<ast::Stmt, ParserError> {
+        self.consume(TokenType::LEFT_PAREN, "expected '(' after 'for'")?;
+        let initializer = if match_token!(self, [TokenType::SEMICOLON]) {
+            None
+        } else if match_token!(self, [TokenType::VAR]) {
+            Some(self.var_declaration()?)
+        } else {
+            Some(self.expression_statement()?)
+        };
+        let cond = if !self.check(&TokenType::SEMICOLON) {
+            self.expression()?
+        } else {
+            ast::Expr::Literal(Literal::Boolean(true))
+        };
+        self.consume(TokenType::SEMICOLON, "expected ';' after loop condition")?;
+        let increment = if !self.check(&TokenType::RIGHT_PAREN) {
+            Some(self.expression()?)
+        } else {
+            None
+        };
+        self.consume(TokenType::RIGHT_PAREN, "expected ')' after for clauses")?;
+        let body = self.statement()?;
+        let mut block = if let Some(increment) = increment {
+            ast::Stmt::Block(vec![body, ast::Stmt::Expression(increment)])
+        } else {
+            ast::Stmt::Block(vec![body])
+        };
+
+        block = ast::Stmt::WhileStmt(cond, Box::new(block));
+
+        block = if let Some(initializer) = initializer {
+            ast::Stmt::Block(vec![initializer, block])
+        } else {
+            block
+        };
+        Ok(block)
+    }
     fn statement(&mut self) -> Result<ast::Stmt, ParserError> {
         if match_token!(self, [TokenType::PRINT]) {
             return self.print_statement();
@@ -229,6 +292,12 @@ impl<'a> Parser<'a> {
         }
         if match_token!(self, [TokenType::IF]) {
             return self.if_statement();
+        }
+        if match_token!(self, [TokenType::WHILE]) {
+            return self.while_statement();
+        }
+        if match_token!(self, [TokenType::FOR]) {
+            return self.for_statement();
         }
         self.expression_statement()
     }
