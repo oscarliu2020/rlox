@@ -10,7 +10,10 @@ rustc-hash = "1.1.0"
 thiserror = "1.0.60"
 [dev-dependencies]
 criterion="0.5"
+
+[[bench]]
+name = "bench1"
+harness = false
 [profile.release]
-strip=true
 panic="abort"
-debug = false
+debug = true

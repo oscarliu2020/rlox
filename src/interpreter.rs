@@ -1,7 +1,6 @@
 use super::environment::{Environment, EnvironmentRef, Envt};
 use crate::syntax::ast::{Expr, ExprVisitor, Stmt, StmtVisitor};
 use crate::syntax::token::{Func, Function, Literal, NativeFunc, Token, TokenType};
-use std::ptr::NonNull;
 use std::{cell::RefCell, rc::Rc};
 fn error(t: &Token, msg: &str) {
     println!("[Runtime Error]line {}: {} ** {msg}", t.line, t.lexeme);
