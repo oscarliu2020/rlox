@@ -2,6 +2,7 @@ use super::token::{Literal, Token};
 use std::fmt::{Display, Formatter};
 use thiserror::Error;
 #[non_exhaustive]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Assign(Token, Box<Expr>),
     Binary(Box<Expr>, Token, Box<Expr>),
@@ -10,6 +11,7 @@ pub enum Expr {
     Unary(Token, Box<Expr>),
     Variable(Token),
     Logical(Box<Expr>, Token, Box<Expr>),
+    Call(Box<Expr>, Token, Vec<Expr>),
 }
 impl Display for Expr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -35,9 +37,17 @@ impl Display for Expr {
             Expr::Logical(left, tok, right) => {
                 write!(f, "({} {} {})", left, tok.lexeme, right)
             }
+            Expr::Call(callee, _, args) => {
+                write!(f, "{}(", callee)?;
+                for arg in args {
+                    write!(f, "{},", arg)?;
+                }
+                write!(f, ")")
+            }
         }
     }
 }
+#[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub enum Stmt {
     Expression(Expr),
@@ -53,6 +63,18 @@ pub enum VisitorError {
     VistorError,
     #[error("Environment Error")]
     EnvironmentError,
+    #[error("line {}: {} ** Can only call functions and classes",.0.line,.0.lexeme)]
+    NotCallable(Token),
+    #[error("line {}: {} ** Expected {0} arguments but got {1}.",.2.line,.2.lexeme)]
+    ArityNotMatched(usize, usize, Token),
+    #[error("line {}: {} ** Operands must be two numbers",.0.line,.0.lexeme)]
+    ArithmeticError(Token),
+    #[error("line {}: {} ** Unknown {1} Operator",.0.line,.0.lexeme)]
+    UnknownOperator(Token, &'static str),
+    #[error("line {}: {} ** Unary - must be used with a number",.0.line,.0.lexeme)]
+    UnaryTypeError(Token),
+    #[error("line {}: {} ** Undefined variable",.0.line,.0.lexeme)]
+    UndefinedVariable(Token),
 }
 pub type VisitorResult<T> = Result<T, VisitorError>;
 pub trait ExprVisitor {
@@ -63,6 +85,8 @@ pub trait ExprVisitor {
     fn visit_variable(&mut self, token: &Token) -> VisitorResult<Literal>;
     fn visit_assign(&mut self, token: &Token, expr: &Expr) -> VisitorResult<Literal>;
     fn visit_logical(&mut self, left: &Expr, token: &Token, right: &Expr)
+        -> VisitorResult<Literal>;
+    fn visit_call(&mut self, callee: &Expr, paren: &Token, args: &[Expr])
         -> VisitorResult<Literal>;
 }
 pub trait StmtVisitor {

@@ -123,13 +123,42 @@ impl<'a> Parser<'a> {
         self.error(self.peek(), "expected expression");
         Err(ParserError())
     }
+    #[inline]
+    fn finish_call(&mut self, callee: ast::Expr) -> Result<ast::Expr, ParserError> {
+        let mut args = vec![];
+        if !self.check(&TokenType::RIGHT_PAREN) {
+            loop {
+                if args.len() >= 255 {
+                    self.error(self.peek(), "Cannot have more than 255 arguments");
+                    return Err(ParserError());
+                }
+                args.push(self.expression()?);
+                if !match_token!(self, [TokenType::COMMA]) {
+                    break;
+                }
+            }
+        }
+        let paren = self.consume(TokenType::RIGHT_PAREN, "expected ')' after arguments")?;
+        Ok(ast::Expr::Call(Box::new(callee), paren, args))
+    }
+    fn call(&mut self) -> Result<ast::Expr, ParserError> {
+        let mut expr = self.primary()?;
+        loop {
+            if match_token!(self, [TokenType::LEFT_PAREN]) {
+                expr = self.finish_call(expr)?;
+            } else {
+                break;
+            }
+        }
+        Ok(expr)
+    }
     fn unary(&mut self) -> Result<ast::Expr, ParserError> {
         if match_token!(self, [TokenType::BANG, TokenType::MINUS]) {
             let operator = self.previous().clone();
             let right = self.unary()?;
             return Ok(ast::Expr::Unary(operator, Box::new(right)));
         }
-        self.primary()
+        self.call()
     }
     fn factor(&mut self) -> Result<ast::Expr, ParserError> {
         let mut expr = self.unary()?;

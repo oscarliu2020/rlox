@@ -224,7 +224,7 @@ mod tests {
     }
     #[test]
     fn test_number() {
-        let mut scanner = Tokenizer::new(".1234".to_string());
+        let mut scanner = Tokenizer::new("   34545 .1234".to_string());
         println!("{:?}", scanner.scan_tokens());
     }
     #[test]

@@ -50,16 +50,61 @@ pub enum TokenType {
 
     EOF,
 }
-
 use TokenType::*;
 pub fn get_keywords(s: impl AsRef<str>) -> Option<TokenType> {
     get_keyword_impl(s.as_ref())
 }
+use super::ast::Stmt;
+#[derive(Debug, Clone, PartialEq)]
+pub struct Func {
+    pub params: Vec<String>,
+    pub body: Vec<Stmt>,
+    pub name: String,
+}
+#[derive(Debug, Clone, PartialEq)]
+pub struct NativeFunc {
+    pub name: String,
+    pub func: fn() -> Literal,
+    pub arity: usize,
+}
+#[derive(Clone, PartialEq)]
+pub enum Function {
+    Function(Func), //0:parameters,1:body
+    Native(NativeFunc),
+}
+impl Function {
+    fn display(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Function::Function(func) => {
+                write!(f, "function {}", func.name)
+            }
+            Function::Native(native) => {
+                write!(f, "native function {}", native.name)
+            }
+        }
+    }
+}
+impl Display for Function {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.display(f)
+    }
+}
+impl fmt::Debug for Function {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.display(f)
+    }
+}
+// impl<T> Func for T where T: fn() -> Literal + Clone {}
+// struct LoxFn {
+//     function_type: Function,
+//     closure:Box<dyn Func>
+// }
 #[derive(Debug, Clone, PartialEq)]
 pub enum Literal {
     Number(f64),
     String(String),
     Boolean(bool),
+    Callable(Function),
     Nil,
 }
 impl Display for Literal {
@@ -69,6 +114,7 @@ impl Display for Literal {
             Literal::Boolean(b) => write!(f, "{}", b),
             Literal::Number(n) => write!(f, "{:.}", *n),
             Literal::String(s) => write!(f, "\"{}\"", s),
+            Literal::Callable(..) => write!(f, "callable"),
         }
     }
 }
@@ -81,7 +127,7 @@ impl Literal {
         }
     }
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Token {
     pub token_type: TokenType,
     pub lexeme: String,

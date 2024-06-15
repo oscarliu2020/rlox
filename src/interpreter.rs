@@ -1,12 +1,53 @@
+use super::environment::{Environment,Envt,EnvironmentRef};
+use std::{rc::Rc,cell::RefCell};
 use crate::syntax::ast::{Expr, ExprVisitor, Stmt, StmtVisitor};
-use crate::syntax::token::{Literal, Token, TokenType};
+use crate::syntax::token::{Function, Literal, NativeFunc, Token, TokenType};
+use std::ptr::NonNull;
 fn error(t: &Token, msg: &str) {
     println!("[Runtime Error]line {}: {} ** {msg}", t.line, t.lexeme);
 }
 
-#[derive(Default)]
 pub struct Interpreter {
-    environment: Environment,
+    global: EnvironmentRef,
+    environment: EnvironmentRef,
+}
+impl Default for Interpreter {
+    fn default() -> Self {
+        let env = Rc::new(RefCell::new(Environment::new(None)));
+        let mut global=Rc::clone(&env);
+        global.define("clock".to_string(), Literal::Callable(Function::Native(NativeFunc{
+            arity:0,
+            func:||{
+                let now=std::time::SystemTime::now();
+                let duration=now.duration_since(std::time::UNIX_EPOCH).unwrap();
+                Literal::Number(duration.as_secs_f64())
+            },
+            name:"clock".to_string()
+        })));
+        Self {
+            environment: env,
+            global
+        }
+    }
+}
+trait RloxCallable {
+    fn call(self, interpreter: &mut Interpreter, args: Vec<Literal>) -> VisitorResult<Literal>;
+
+    fn arity(&self) -> usize;
+}
+impl RloxCallable for Function {
+    fn arity(&self) -> usize {
+        match self {
+            Function::Function(func) => func.params.len(),
+            Function::Native(native) => native.arity,
+        }
+    }
+    fn call(self, interpreter: &mut Interpreter, args: Vec<Literal>) -> VisitorResult<Literal> {
+        match self {
+            Function::Function(..) => todo!(),
+            Function::Native(native) => Ok((native.func)()),
+        }
+    }
 }
 use crate::syntax::ast::{VisitorError, VisitorResult};
 impl Interpreter {
@@ -16,7 +57,8 @@ impl Interpreter {
                 eprintln!("Error parsing statement");
                 break;
             };
-            if self.execute(stmt).is_err() {
+            if let Err(e) = self.execute(stmt) {
+                eprintln!("[Runtime Error] {e:#}");
                 break;
             }
         }
@@ -30,6 +72,7 @@ impl Interpreter {
             Expr::Variable(token) => self.visit_variable(token),
             Expr::Assign(token, expr) => self.visit_assign(token, expr),
             Expr::Logical(e1, token, e2) => self.visit_logical(e1, token, e2),
+            Expr::Call(callee, paren, args) => self.visit_call(callee, paren, args),
         }
     }
     fn execute(&mut self, stmt: &Stmt) -> VisitorResult<()> {
@@ -44,14 +87,16 @@ impl Interpreter {
         }
     }
     fn execute_block(&mut self, stmts: &[Stmt]) -> VisitorResult<()> {
-        let prev = self.environment.clone();
-        self.environment = Environment::new(Some(Box::new(prev)));
+        let prev=Rc::clone(&self.environment);
+        let new_env = Rc::new(RefCell::new(Environment::new(Some(Rc::clone(&self.environment)))));
+        self.environment = new_env;
         for stmt in stmts {
             if self.execute(stmt).is_err() {
                 break;
             }
         }
-        self.environment = *self.environment.enclosing.take().unwrap();
+        // self.environment = self.environment.enclosing.take().unwrap();
+        self.environment = prev;
         Ok(())
     }
 }
@@ -83,12 +128,15 @@ impl StmtVisitor for Interpreter {
         self.evaluate(expr).map(|_| ())
     }
     fn visit_print(&mut self, expr: &Expr) -> VisitorResult<()> {
-        if let Ok(literal) = self.evaluate(expr) {
-            println!("{}", literal);
-            Ok(())
-        } else {
-            Err(VisitorError::VistorError)
-        }
+        // if let Ok(literal) = self.evaluate(expr) {
+        //     println!("{}", literal);
+        //     Ok(())
+        // } else {
+        //     Err(VisitorError::VistorError)
+        // }
+        self.evaluate(expr).map(|res| {
+            println!("{}", res);
+        })
     }
     fn visit_var(&mut self, token: &Token, expr: Option<&Expr>) -> VisitorResult<()> {
         let value = if let Some(expr) = expr {
@@ -96,12 +144,39 @@ impl StmtVisitor for Interpreter {
         } else {
             Literal::Nil
         };
-        self.environment.define(token.lexeme.clone(), value);
+        self.environment
+            .borrow_mut()
+            .define(token.lexeme.clone(), value);
         Ok(())
     }
 }
 
 impl ExprVisitor for Interpreter {
+    fn visit_call(
+        &mut self,
+        callee: &Expr,
+        paren: &Token,
+        args: &[Expr],
+    ) -> VisitorResult<Literal> {
+        let callee = self.evaluate(callee)?;
+        let mut arguments = Vec::new();
+        for arg in args {
+            arguments.push(self.evaluate(arg)?);
+        }
+        match callee {
+            Literal::Callable(callable) => {
+                if arguments.len() != callable.arity() {
+                    return Err(VisitorError::ArityNotMatched(
+                        callable.arity(),
+                        arguments.len(),
+                        paren.clone(),
+                    ));
+                }
+                callable.call(self, arguments)
+            }
+            _ => Err(VisitorError::VistorError),
+        }
+    }
     fn visit_logical(
         &mut self,
         left: &Expr,
@@ -121,8 +196,8 @@ impl ExprVisitor for Interpreter {
                 }
             }
             _ => {
-                error(token, "Unknown logical operator");
-                return Err(VisitorError::VistorError);
+                // error(token, "Unknown logical operator");
+                return Err(VisitorError::UnknownOperator(token.clone(), "logical"));
             }
         }
         self.evaluate(right)
@@ -131,7 +206,7 @@ impl ExprVisitor for Interpreter {
         Ok(ltr.clone())
     }
     fn visit_variable(&mut self, token: &Token) -> VisitorResult<Literal> {
-        self.environment.get(token)
+        self.environment.borrow().get(token)
     }
     fn visit_grouping(&mut self, expr: &Expr) -> VisitorResult<Literal> {
         self.evaluate(expr)
@@ -141,15 +216,12 @@ impl ExprVisitor for Interpreter {
         match token.token_type {
             TokenType::MINUS => match right {
                 Literal::Number(n) => Ok(Literal::Number(-n)),
-                _ => {
-                    error(token, "Unary - must be used with a number");
-                    Err(VisitorError::VistorError)
-                }
+                _ => Err(VisitorError::VistorError),
             },
             TokenType::BANG => Ok(Literal::Boolean(!right.is_truthy())),
             _ => {
-                error(token, "Unknown unary operator");
-                Err(VisitorError::VistorError)
+                // error(token, "Unknown unary operator");
+                Err(VisitorError::UnknownOperator(token.clone(), "unary"))
             }
         }
     }
@@ -160,118 +232,73 @@ impl ExprVisitor for Interpreter {
             TokenType::PLUS => match (l, r) {
                 (Literal::Number(n1), Literal::Number(n2)) => Ok(Literal::Number(n1 + n2)),
                 _ => {
-                    error(token, "Operands must be two numbers");
-                    Err(VisitorError::VistorError)
+                    // error(token, "Operands must be two numbers");
+                    Err(VisitorError::ArithmeticError(token.clone()))
                 }
             },
             TokenType::MINUS => match (l, r) {
                 (Literal::Number(n1), Literal::Number(n2)) => Ok(Literal::Number(n1 - n2)),
                 _ => {
-                    error(token, "Operands must be two numbers");
-                    Err(VisitorError::VistorError)
+                    // error(token, "Operands must be two numbers");
+                    Err(VisitorError::ArithmeticError(token.clone()))
                 }
             },
             TokenType::STAR => match (l, r) {
                 (Literal::Number(n1), Literal::Number(n2)) => Ok(Literal::Number(n1 * n2)),
                 _ => {
-                    error(token, "Operands must be two numbers");
-                    Err(VisitorError::VistorError)
+                    // error(token, "Operands must be two numbers");
+                    Err(VisitorError::ArithmeticError(token.clone()))
                 }
             },
             TokenType::SLASH => match (l, r) {
                 (Literal::Number(n1), Literal::Number(n2)) => Ok(Literal::Number(n1 / n2)),
                 _ => {
-                    error(token, "Operands must be two numbers");
-                    Err(VisitorError::VistorError)
+                    // error(token, "Operands must be two numbers");
+                    Err(VisitorError::ArithmeticError(token.clone()))
                 }
             },
             TokenType::GREATER => match (l, r) {
                 (Literal::Number(n1), Literal::Number(n2)) => Ok(Literal::Boolean(n1 > n2)),
                 _ => {
-                    error(token, "Operands must be two numbers");
-                    Err(VisitorError::VistorError)
+                    // error(token, "Operands must be two numbers");
+                    Err(VisitorError::ArithmeticError(token.clone()))
                 }
             },
             TokenType::GREATER_EQUAL => match (l, r) {
                 (Literal::Number(n1), Literal::Number(n2)) => Ok(Literal::Boolean(n1 >= n2)),
                 _ => {
-                    error(token, "Operands must be two numbers");
-                    Err(VisitorError::VistorError)
+                    // error(token, "Operands must be two numbers");
+                    Err(VisitorError::ArithmeticError(token.clone()))
                 }
             },
             TokenType::LESS => match (l, r) {
                 (Literal::Number(n1), Literal::Number(n2)) => Ok(Literal::Boolean(n1 < n2)),
                 _ => {
-                    error(token, "Operands must be two numbers");
-                    Err(VisitorError::VistorError)
+                    // error(token, "Operands must be two numbers");
+                    Err(VisitorError::ArithmeticError(token.clone()))
                 }
             },
             TokenType::LESS_EQUAL => match (l, r) {
                 (Literal::Number(n1), Literal::Number(n2)) => Ok(Literal::Boolean(n1 <= n2)),
                 _ => {
-                    error(token, "Operands must be two numbers");
-                    Err(VisitorError::VistorError)
+                    // error(token, "Operands must be two numbers");
+                    Err(VisitorError::ArithmeticError(token.clone()))
                 }
             },
             TokenType::BANG_EQUAL => Ok(Literal::Boolean(l != r)),
             TokenType::EQUAL_EQUAL => Ok(Literal::Boolean(l == r)),
             _ => {
-                error(token, "Unknown binary operator");
-                Err(VisitorError::VistorError)
+                // error(token, "Unknown binary operator");
+                Err(VisitorError::UnknownOperator(token.clone(), "binary"))
             }
         }
     }
     fn visit_assign(&mut self, token: &Token, expr: &Expr) -> VisitorResult<Literal> {
         let value = self.evaluate(expr)?;
-        self.environment.assign(token, value.clone())?;
+        self.environment
+            .borrow_mut()
+            .assign(token, value.clone())?;
         Ok(value)
-    }
-}
-use rustc_hash::FxHashMap;
-#[derive(Default, Clone)]
-pub struct Environment {
-    values: FxHashMap<String, Literal>,
-    enclosing: Option<Box<Environment>>,
-}
-impl Environment {
-    pub fn new(enclosing: Option<Box<Environment>>) -> Self {
-        Self {
-            values: FxHashMap::default(),
-            enclosing,
-        }
-    }
-    pub fn define(&mut self, name: String, value: Literal) {
-        self.values.insert(name, value);
-    }
-    pub fn get(&self, name: &Token) -> Result<Literal, VisitorError> {
-        self.values
-            .get(&name.lexeme)
-            .cloned()
-            .or_else(|| {
-                self.enclosing
-                    .as_ref()
-                    .and_then(|enclosing| enclosing.get(name).ok())
-            })
-            .ok_or_else(|| {
-                error(name, "Undefined variable");
-                VisitorError::EnvironmentError
-            })
-    }
-    pub fn assign(&mut self, name: &Token, value: Literal) -> Result<(), VisitorError> {
-        self.values
-            .get_mut(&name.lexeme)
-            .map(|v| {
-                *v = value.clone();
-            })
-            .or_else(|| {
-                self.enclosing
-                    .as_mut()
-                    .and_then(|enclosing| enclosing.assign(name, value).ok())
-            })
-            .ok_or_else(|| {
-                error(name, "Undefined variable");
-                VisitorError::EnvironmentError
-            })
     }
 }
 
@@ -347,6 +374,40 @@ mod tests {
             temp = a;
             a = b;
             }
+        ",
+            &mut interpreter,
+        );
+    }
+    #[test]
+    fn test_native() {
+        let mut interpreter = Interpreter::default();
+        run(
+            r"
+            var a=clock();
+            while (clock() - a < 5) {}
+            print clock() - a;
+        ",
+            &mut interpreter,
+        );
+    }
+    #[test]
+    fn test_fib() {
+        let mut interpreter = Interpreter::default();
+        run(
+            r"
+            var a=clock();
+            for (var t=0;t<10;t=t+1){
+                var a=0;
+                var b=1;
+                
+                for (var i = 0; i < 30; i = i + 1) {
+                    // print b;
+                    var temp = a;
+                    a = b;
+                    b = b + temp;
+                }
+            }
+            print clock()-a;
         ",
             &mut interpreter,
         );
