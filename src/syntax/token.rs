@@ -57,9 +57,27 @@ pub fn get_keywords(s: impl AsRef<str>) -> Option<TokenType> {
 use super::ast::Stmt;
 #[derive(Debug, Clone, PartialEq)]
 pub struct Func {
-    pub params: Vec<String>,
-    pub body: Vec<Stmt>,
-    pub name: String,
+    pub decl: Box<Stmt>,
+}
+impl Func {
+    pub fn name(&self) -> &str {
+        match &*self.decl {
+            Stmt::Function(name, _, _) => &name.lexeme,
+            _ => panic!("Not a function"),
+        }
+    }
+    pub fn params(&self) -> &Vec<Token> {
+        match &*self.decl {
+            Stmt::Function(_, params, _) => params,
+            _ => panic!("Not a function"),
+        }
+    }
+    pub fn body(&self) -> &Vec<Stmt> {
+        match &*self.decl {
+            Stmt::Function(_, _, body) => body,
+            _ => panic!("Not a function"),
+        }
+    }
 }
 #[derive(Debug, Clone, PartialEq)]
 pub struct NativeFunc {
@@ -76,7 +94,7 @@ impl Function {
     fn display(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Function::Function(func) => {
-                write!(f, "function {}", func.name)
+                write!(f, "function {}", func.name())
             }
             Function::Native(native) => {
                 write!(f, "native function {}", native.name)

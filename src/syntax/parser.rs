@@ -312,6 +312,16 @@ impl<'a> Parser<'a> {
         };
         Ok(block)
     }
+    fn return_statement(&mut self) -> Result<ast::Stmt, ParserError> {
+        let keyword = self.previous().clone();
+        let value = if !self.check(&TokenType::SEMICOLON) {
+            Some(self.expression()?)
+        } else {
+            None
+        };
+        self.consume(TokenType::SEMICOLON, "expected ';' after return value")?;
+        Ok(ast::Stmt::Return(keyword, value))
+    }
     fn statement(&mut self) -> Result<ast::Stmt, ParserError> {
         if match_token!(self, [TokenType::PRINT]) {
             return self.print_statement();
@@ -328,6 +338,9 @@ impl<'a> Parser<'a> {
         if match_token!(self, [TokenType::FOR]) {
             return self.for_statement();
         }
+        if match_token!(self, [TokenType::RETURN]) {
+            return self.return_statement();
+        }
         self.expression_statement()
     }
     fn var_declaration(&mut self) -> Result<ast::Stmt, ParserError> {
@@ -343,11 +356,52 @@ impl<'a> Parser<'a> {
         )?;
         Ok(ast::Stmt::Var(name.clone(), initializer))
     }
+    fn function(&mut self, kind: &str) -> Result<ast::Stmt, ParserError> {
+        let name = self.consume(TokenType::IDENTIFIER, &format!("expected {} name", kind))?;
+        self.consume(
+            TokenType::LEFT_PAREN,
+            &format!("expected '(' after {}", kind),
+        )?;
+        let mut params = vec![];
+        if !self.check(&TokenType::RIGHT_PAREN) {
+            loop {
+                if params.len() >= 255 {
+                    self.error(self.peek(), "Cannot have more than 255 parameters");
+                    return Err(ParserError());
+                }
+                params.push(
+                    self.consume(TokenType::IDENTIFIER, "expected parameter name")?
+                        .clone(),
+                );
+                if !match_token!(self, [TokenType::COMMA]) {
+                    break;
+                }
+            }
+        }
+        self.consume(TokenType::RIGHT_PAREN, "expected ')' after parameters")?;
+        self.consume(
+            TokenType::LEFT_BRACE,
+            &format!("expected '{{' before {} body", kind),
+        )?;
+        let body = self.block()?;
+        Ok(ast::Stmt::Function(name.clone(), params, body))
+    }
     fn declaration(&mut self) -> Option<ast::Stmt> {
-        let res = if match_token!(self, [TokenType::VAR]) {
-            self.var_declaration()
-        } else {
-            self.statement()
+        // let res = if match_token!(self, [TokenType::VAR]) {
+        //     self.var_declaration()
+        // } else {
+        //     self.statement()
+        // };
+        let res = match self.peek().token_type {
+            TokenType::VAR => {
+                self.advance();
+                self.var_declaration()
+            }
+            TokenType::FUN => {
+                self.advance();
+                self.function("function")
+            }
+            _ => self.statement(),
         };
         match res {
             Ok(stmt) => Some(stmt),

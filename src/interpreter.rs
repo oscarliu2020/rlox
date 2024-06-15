@@ -1,8 +1,8 @@
-use super::environment::{Environment,Envt,EnvironmentRef};
-use std::{rc::Rc,cell::RefCell};
+use super::environment::{Environment, EnvironmentRef, Envt};
 use crate::syntax::ast::{Expr, ExprVisitor, Stmt, StmtVisitor};
-use crate::syntax::token::{Function, Literal, NativeFunc, Token, TokenType};
+use crate::syntax::token::{Func, Function, Literal, NativeFunc, Token, TokenType};
 use std::ptr::NonNull;
+use std::{cell::RefCell, rc::Rc};
 fn error(t: &Token, msg: &str) {
     println!("[Runtime Error]line {}: {} ** {msg}", t.line, t.lexeme);
 }
@@ -14,19 +14,22 @@ pub struct Interpreter {
 impl Default for Interpreter {
     fn default() -> Self {
         let env = Rc::new(RefCell::new(Environment::new(None)));
-        let mut global=Rc::clone(&env);
-        global.define("clock".to_string(), Literal::Callable(Function::Native(NativeFunc{
-            arity:0,
-            func:||{
-                let now=std::time::SystemTime::now();
-                let duration=now.duration_since(std::time::UNIX_EPOCH).unwrap();
-                Literal::Number(duration.as_secs_f64())
-            },
-            name:"clock".to_string()
-        })));
+        let mut global = Rc::clone(&env);
+        global.define(
+            "clock".to_string(),
+            Literal::Callable(Function::Native(NativeFunc {
+                arity: 0,
+                func: || {
+                    let now = std::time::SystemTime::now();
+                    let duration = now.duration_since(std::time::UNIX_EPOCH).unwrap();
+                    Literal::Number(duration.as_secs_f64())
+                },
+                name: "clock".to_string(),
+            })),
+        );
         Self {
             environment: env,
-            global
+            global,
         }
     }
 }
@@ -38,13 +41,24 @@ trait RloxCallable {
 impl RloxCallable for Function {
     fn arity(&self) -> usize {
         match self {
-            Function::Function(func) => func.params.len(),
+            Function::Function(func) => func.params().len(),
             Function::Native(native) => native.arity,
         }
     }
     fn call(self, interpreter: &mut Interpreter, args: Vec<Literal>) -> VisitorResult<Literal> {
         match self {
-            Function::Function(..) => todo!(),
+            Function::Function(f) => {
+                let mut func_env = Environment::new(Some(Rc::clone(&interpreter.global)));
+                for (param, arg) in f.params().iter().zip(args.iter()) {
+                    func_env.define(param.lexeme.clone(), arg.clone());
+                }
+                match interpreter.execute_block(f.body(), func_env) {
+                    Ok(_) => Ok(Literal::Nil),
+                    Err(VisitorError::ReturnValue(value)) => Ok(value),
+                    Err(e) => Err(e),
+                }
+                // todo!()
+            }
             Function::Native(native) => Ok((native.func)()),
         }
     }
@@ -83,16 +97,29 @@ impl Interpreter {
             Stmt::Var(token, expr) => self.visit_var(token, expr.as_ref()),
             Stmt::IfStmt(cond, body) => self.visit_if(cond, body),
             Stmt::WhileStmt(cond, body) => self.visit_while(cond, body),
+            Stmt::Function(name, params, body) => self.visit_function(name, params, body),
+            Stmt::Return(token, expr) => self.visit_return(token, expr.as_ref()),
             _ => Err(VisitorError::VistorError),
         }
     }
-    fn execute_block(&mut self, stmts: &[Stmt]) -> VisitorResult<()> {
-        let prev=Rc::clone(&self.environment);
-        let new_env = Rc::new(RefCell::new(Environment::new(Some(Rc::clone(&self.environment)))));
-        self.environment = new_env;
+    fn execute_block(&mut self, stmts: &[Stmt], block_env: Environment) -> VisitorResult<()> {
+        let prev = Rc::clone(&self.environment);
+
+        self.environment = Rc::new(RefCell::new(block_env));
         for stmt in stmts {
-            if self.execute(stmt).is_err() {
-                break;
+            // if self.execute(stmt).is_err() {
+            //     break;
+            // }
+            match self.execute(stmt) {
+                Ok(_) => {}
+                e @ Err(VisitorError::ReturnValue(_)) => {
+                    self.environment = prev;
+                    return e;
+                }
+                Err(e) => {
+                    self.environment = prev;
+                    return Err(e);
+                }
             }
         }
         // self.environment = self.environment.enclosing.take().unwrap();
@@ -116,7 +143,8 @@ impl StmtVisitor for Interpreter {
         Ok(())
     }
     fn visit_block(&mut self, stmts: &[Stmt]) -> VisitorResult<()> {
-        self.execute_block(stmts)
+        let block_env = Environment::new(Some(Rc::clone(&self.environment)));
+        self.execute_block(stmts, block_env)
     }
     fn visit_expression(&mut self, expr: &Expr) -> VisitorResult<()> {
         // if let Ok(literal) = self.evaluate(expr) {
@@ -148,6 +176,27 @@ impl StmtVisitor for Interpreter {
             .borrow_mut()
             .define(token.lexeme.clone(), value);
         Ok(())
+    }
+    fn visit_function(
+        &mut self,
+        name: &Token,
+        params: &[Token],
+        body: &[Stmt],
+    ) -> VisitorResult<()> {
+        let new_func = Function::Function(Func {
+            decl: Box::new(Stmt::Function(name.clone(), params.to_vec(), body.to_vec())),
+        });
+        self.environment
+            .define(name.lexeme.clone(), Literal::Callable(new_func));
+        Ok(())
+    }
+    fn visit_return(&mut self, token: &Token, expr: Option<&Expr>) -> VisitorResult<()> {
+        let value = if let Some(expr) = expr {
+            self.evaluate(expr)?
+        } else {
+            Literal::Nil
+        };
+        Err(VisitorError::ReturnValue(value))
     }
 }
 
@@ -295,9 +344,7 @@ impl ExprVisitor for Interpreter {
     }
     fn visit_assign(&mut self, token: &Token, expr: &Expr) -> VisitorResult<Literal> {
         let value = self.evaluate(expr)?;
-        self.environment
-            .borrow_mut()
-            .assign(token, value.clone())?;
+        self.environment.borrow_mut().assign(token, value.clone())?;
         Ok(value)
     }
 }
@@ -406,6 +453,24 @@ mod tests {
                     a = b;
                     b = b + temp;
                 }
+            }
+            print clock()-a;
+        ",
+            &mut interpreter,
+        );
+    }
+    #[test]
+    fn test_recursive() {
+        let mut interpreter = Interpreter::default();
+        run(
+            r"
+            fun fib(n) {
+                if (n <= 1) return n;
+                return fib(n - 1) + fib(n - 2);
+            }
+            var a=clock();
+            for (var t=0;t<10;t=t+1){
+                print fib(30);
             }
             print clock()-a;
         ",

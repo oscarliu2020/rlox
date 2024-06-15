@@ -2,15 +2,15 @@ use crate::syntax::{
     ast::VisitorError,
     token::{Literal, Token},
 };
-use std::{rc::Rc,cell::RefCell};
 use rustc_hash::FxHashMap;
+use std::{cell::RefCell, rc::Rc};
 pub type EnvironmentRef = Rc<RefCell<Environment>>;
 pub trait Envt {
     fn define(&mut self, name: String, value: Literal);
     fn get(&self, name: &Token) -> Result<Literal, VisitorError>;
     fn assign(&mut self, name: &Token, value: Literal) -> Result<(), VisitorError>;
 }
-impl<T:Envt> Envt for Rc<RefCell<T>> {
+impl<T: Envt> Envt for Rc<RefCell<T>> {
     fn define(&mut self, name: String, value: Literal) {
         self.borrow_mut().define(name, value)
     }
@@ -71,6 +71,4 @@ impl Envt for Environment {
 }
 
 #[cfg(test)]
-mod tests {
-    
-}
+mod tests {}

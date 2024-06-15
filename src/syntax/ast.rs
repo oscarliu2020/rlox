@@ -56,6 +56,8 @@ pub enum Stmt {
     Block(Vec<Stmt>),
     IfStmt(Expr, Box<(Stmt, Option<Stmt>)>),
     WhileStmt(Expr, Box<Stmt>),
+    Function(Token, Vec<Token>, Vec<Stmt>), // name, params, body
+    Return(Token, Option<Expr>),
 }
 #[derive(Error, Debug)]
 pub enum VisitorError {
@@ -75,6 +77,8 @@ pub enum VisitorError {
     UnaryTypeError(Token),
     #[error("line {}: {} ** Undefined variable",.0.line,.0.lexeme)]
     UndefinedVariable(Token),
+    #[error("Return value: {0}")]
+    ReturnValue(Literal),
 }
 pub type VisitorResult<T> = Result<T, VisitorError>;
 pub trait ExprVisitor {
@@ -96,4 +100,11 @@ pub trait StmtVisitor {
     fn visit_var(&mut self, token: &Token, expr: Option<&Expr>) -> VisitorResult<()>;
     fn visit_block(&mut self, stmts: &[Stmt]) -> VisitorResult<()>;
     fn visit_if(&mut self, cond: &Expr, body: &(Stmt, Option<Stmt>)) -> VisitorResult<()>;
+    fn visit_function(
+        &mut self,
+        name: &Token,
+        params: &[Token],
+        body: &[Stmt],
+    ) -> VisitorResult<()>;
+    fn visit_return(&mut self, token: &Token, expr: Option<&Expr>) -> VisitorResult<()>;
 }
