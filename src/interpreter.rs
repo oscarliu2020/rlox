@@ -183,7 +183,7 @@ impl StmtVisitor for Interpreter {
         body: &[Stmt],
     ) -> VisitorResult<()> {
         let new_func = Function::Function(Func {
-            decl: Box::new(Stmt::Function(name.clone(), params.to_vec(), body.to_vec())),
+            decl: Rc::new(Stmt::Function(name.clone(), params.to_vec(), body.to_vec())),
         });
         self.environment
             .define(name.lexeme.clone(), Literal::Callable(new_func));

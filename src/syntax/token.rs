@@ -55,9 +55,10 @@ pub fn get_keywords(s: impl AsRef<str>) -> Option<TokenType> {
     get_keyword_impl(s.as_ref())
 }
 use super::ast::Stmt;
+use std::rc::Rc;
 #[derive(Debug, Clone, PartialEq)]
 pub struct Func {
-    pub decl: Box<Stmt>,
+    pub decl: Rc<Stmt>,
 }
 impl Func {
     pub fn name(&self) -> &str {
