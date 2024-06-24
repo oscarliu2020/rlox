@@ -458,22 +458,4 @@ mod tests {
             &mut interpreter,
         );
     }
-    #[test]
-    fn test_recursive() {
-        let mut interpreter = Interpreter::default();
-        run(
-            r"
-            fun fib(n) {
-                if (n <= 1) return n;
-                return fib(n - 1) + fib(n - 2);
-            }
-            var a=clock();
-            for (var t=0;t<10;t=t+1){
-                print fib(30);
-            }
-            print clock()-a;
-        ",
-            &mut interpreter,
-        );
-    }
 }

@@ -132,8 +132,8 @@ impl Display for Literal {
             Literal::Nil => write!(f, "nil"),
             Literal::Boolean(b) => write!(f, "{}", b),
             Literal::Number(n) => write!(f, "{:.}", *n),
-            Literal::String(s) => write!(f, "\"{}\"", s),
-            Literal::Callable(..) => write!(f, "callable"),
+            Literal::String(s) => write!(f, "{}", s),
+            Literal::Callable(ff) => write!(f, "{}", ff),
         }
     }
 }
