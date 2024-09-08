@@ -79,6 +79,8 @@ pub enum VisitorError {
     UndefinedVariable(Token),
     #[error("Return value: {0}")]
     ReturnValue(Literal),
+    #[error("line: {} {} ** Can't read local variable in its own initializer.",.0.line,.0.lexeme)]
+    NotInitialized(Token),
 }
 pub type VisitorResult<T> = Result<T, VisitorError>;
 pub trait ExprVisitor {

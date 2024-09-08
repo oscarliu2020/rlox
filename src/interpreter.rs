@@ -1,3 +1,5 @@
+use rustc_hash::FxHashMap;
+
 use super::environment::{Environment, EnvironmentRef, Envt};
 use crate::syntax::ast::{Expr, ExprVisitor, Stmt, StmtVisitor};
 use crate::syntax::token::{Func, Function, Literal, NativeFunc, Token, TokenType};
@@ -9,6 +11,7 @@ fn error(t: &Token, msg: &str) {
 pub struct Interpreter {
     global: EnvironmentRef,
     environment: EnvironmentRef,
+    locals: FxHashMap<*const Token, usize>,
 }
 impl Default for Interpreter {
     fn default() -> Self {
@@ -29,6 +32,7 @@ impl Default for Interpreter {
         Self {
             environment: env,
             global,
+            locals: FxHashMap::default(),
         }
     }
 }
@@ -47,7 +51,7 @@ impl RloxCallable for Function {
     fn call(self, interpreter: &mut Interpreter, args: Vec<Literal>) -> VisitorResult<Literal> {
         match self {
             Function::Function(f) => {
-                let mut func_env = Environment::new(Some(Rc::clone(&interpreter.global)));
+                let mut func_env = Environment::new(Some(Rc::clone(&f.closure)));
                 for (param, arg) in f.params().iter().zip(args.iter()) {
                     func_env.define(param.lexeme.clone(), arg.clone());
                 }
@@ -75,6 +79,9 @@ impl Interpreter {
                 break;
             }
         }
+    }
+    pub fn resolve(&mut self, token: &Token, depth: usize) {
+        self.locals.insert(token as _, depth);
     }
     fn evaluate(&mut self, expr: &Expr) -> VisitorResult<Literal> {
         match expr {
@@ -184,6 +191,7 @@ impl StmtVisitor for Interpreter {
     ) -> VisitorResult<()> {
         let new_func = Function::Function(Func {
             decl: Rc::new(Stmt::Function(name.clone(), params.to_vec(), body.to_vec())),
+            closure: Rc::clone(&self.environment),
         });
         self.environment
             .define(name.lexeme.clone(), Literal::Callable(new_func));
@@ -455,6 +463,45 @@ mod tests {
             }
             print clock()-a;
         ",
+            &mut interpreter,
+        );
+    }
+    #[test]
+    fn local_fun() {
+        let mut interpreter = Interpreter::default();
+        run(
+            r#"
+            fun makeCounter() {
+  var i = 0;
+  fun count() {
+    i = i + 1;
+    print i;
+  }
+
+  return count;
+}
+
+var counter = makeCounter();
+counter(); // "1".
+counter(); // "2".
+        "#,
+            &mut interpreter,
+        );
+    }
+    #[test]
+    fn local_fun2() {
+        let mut interpreter = Interpreter::default();
+        run(
+            r#"var a = "global";
+        {
+          fun showA() {
+            print a;
+          }
+        
+          showA();
+          var a = "block";
+          showA();
+        }"#,
             &mut interpreter,
         );
     }

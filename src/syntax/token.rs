@@ -1,4 +1,7 @@
-use std::fmt::{self, Display};
+use std::{
+    cell::RefCell,
+    fmt::{self, Display},
+};
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenType {
@@ -54,11 +57,19 @@ use TokenType::*;
 pub fn get_keywords(s: impl AsRef<str>) -> Option<TokenType> {
     get_keyword_impl(s.as_ref())
 }
+use crate::environment::{Environment, EnvironmentRef};
+
 use super::ast::Stmt;
 use std::rc::Rc;
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone)]
 pub struct Func {
     pub decl: Rc<Stmt>,
+    pub closure: EnvironmentRef,
+}
+impl PartialEq for Func {
+    fn eq(&self, other: &Self) -> bool {
+        self.decl == other.decl
+    }
 }
 impl Func {
     pub fn name(&self) -> &str {
