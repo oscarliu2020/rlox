@@ -1,3 +1,4 @@
+use super::super::environment::EnvironmentError;
 use super::token::{Literal, Token};
 use std::fmt::{Display, Formatter};
 use thiserror::Error;
@@ -81,6 +82,8 @@ pub enum VisitorError {
     ReturnValue(Literal),
     #[error("line: {} {} ** Can't read local variable in its own initializer.",.0.line,.0.lexeme)]
     NotInitialized(Token),
+    #[error("EnvironmentError: {0}")]
+    Variable(#[from] EnvironmentError),
 }
 pub type VisitorResult<T> = Result<T, VisitorError>;
 pub trait ExprVisitor {

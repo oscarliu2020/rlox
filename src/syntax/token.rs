@@ -1,7 +1,4 @@
-use std::{
-    cell::RefCell,
-    fmt::{self, Display},
-};
+use std::fmt::{self, Display};
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenType {
@@ -57,7 +54,7 @@ use TokenType::*;
 pub fn get_keywords(s: impl AsRef<str>) -> Option<TokenType> {
     get_keyword_impl(s.as_ref())
 }
-use crate::environment::{Environment, EnvironmentRef};
+use crate::environment::EnvironmentRef;
 
 use super::ast::Stmt;
 use std::rc::Rc;

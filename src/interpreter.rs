@@ -132,6 +132,17 @@ impl Interpreter {
         self.environment = prev;
         Ok(())
     }
+    fn look_up_variable(&self, token: &Token) -> VisitorResult<Literal> {
+        self.locals.get(&(token as _)).map_or_else(
+            || self.global.get(token),
+            |&depth| {
+                self.environment
+                    .borrow()
+                    .get_at(depth, &token.lexeme)
+                    .map_err(|e| e.into())
+            },
+        )
+    }
 }
 impl StmtVisitor for Interpreter {
     fn visit_while(&mut self, cond: &Expr, body: &Stmt) -> VisitorResult<()> {
@@ -262,7 +273,8 @@ impl ExprVisitor for Interpreter {
         Ok(ltr.clone())
     }
     fn visit_variable(&mut self, token: &Token) -> VisitorResult<Literal> {
-        self.environment.borrow().get(token)
+        // self.environment.borrow().get(token)
+        self.look_up_variable(token)
     }
     fn visit_grouping(&mut self, expr: &Expr) -> VisitorResult<Literal> {
         self.evaluate(expr)
