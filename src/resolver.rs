@@ -5,6 +5,14 @@ pub struct Resolver<'a> {
     interpreter: &'a mut Interpreter,
     scopes: Vec<FxHashMap<String, bool>>,
 }
+use thiserror::Error;
+#[derive(Error, Debug)]
+pub enum ResolverError {
+    #[error("Variable {0} not initialized")]
+    NotInitialized(Token),
+    #[error("Already a variable with this name in this scope.")]
+    AlreadyDeclared(Token),
+}
 impl<'a> Resolver<'a> {
     pub fn new(interpreter: &'a mut Interpreter) -> Self {
         Resolver {
@@ -12,41 +20,22 @@ impl<'a> Resolver<'a> {
             scopes: vec![],
         }
     }
-    pub fn resolve(&mut self, stmts: &[Stmt]) -> VisitorResult<()> {
+    pub fn resolve(&mut self, stmts: &mut [Stmt]) -> VisitorResult<()> {
         for stmt in stmts {
             self.resolve_stmt(stmt)?;
         }
         Ok(())
     }
-    fn resolve_stmt(&mut self, stmt: &Stmt) -> VisitorResult<()> {
-        match stmt {
-            Stmt::Block(stmts) => self.visit_block(stmts),
-            Stmt::Expression(expr) => self.visit_expression(expr),
-            Stmt::Function(name, params, body) => self.visit_function(name, params, body),
-            Stmt::IfStmt(cond, body) => self.visit_if(cond, body),
-            Stmt::Print(expr) => self.visit_print(expr),
-            Stmt::Return(token, expr) => self.visit_return(token, expr.as_ref()),
-            Stmt::Var(token, expr) => self.visit_var(token, expr.as_ref()),
-            Stmt::WhileStmt(cond, body) => self.visit_while(cond, body),
-        }
+    fn resolve_stmt(&mut self, stmt: &mut Stmt) -> VisitorResult<()> {
+        stmt.accept(self)
     }
-    fn resolve_expr(&mut self, expr: &Expr) -> VisitorResult<()> {
-        match expr {
-            Expr::Assign(token, expr) => self.visit_assign(token, expr),
-            Expr::Binary(e1, token, e2) => self.visit_binary(token, e1, e2),
-            Expr::Call(callee, paren, args) => self.visit_call(callee, paren, args),
-            Expr::Grouping(expr) => self.visit_grouping(expr),
-            Expr::Literal(literal) => self.visit_literal(literal),
-            Expr::Logical(left, token, right) => self.visit_logical(left, token, right),
-            Expr::Unary(token, expr) => self.visit_unary(token, expr),
-            Expr::Variable(token) => self.visit_variable(token),
-        }
-        .map(|_| ())
+    fn resolve_expr(&mut self, expr: &mut Expr) -> VisitorResult<()> {
+        expr.accept(self).map(|_| ())
     }
-    fn resolve_local(&mut self, token: &Token) -> VisitorResult<()> {
+    fn resolve_local(&mut self, token: &mut impl Resolvable) -> VisitorResult<()> {
         for (i, scope) in self.scopes.iter().enumerate().rev() {
-            if scope.contains_key(&token.lexeme) {
-                self.interpreter.resolve(token, self.scopes.len() - 1 - i);
+            if scope.contains_key(&token.name().lexeme) {
+                token.set_dist(self.scopes.len() - 1 - i);
                 return Ok(());
             }
         }
@@ -76,7 +65,7 @@ impl<'a> Resolver<'a> {
         &mut self,
         _: &Token,
         params: &[Token],
-        body: &[Stmt],
+        body: &mut [Stmt],
     ) -> VisitorResult<()> {
         self.begin_scope();
         for param in params {
@@ -89,40 +78,40 @@ impl<'a> Resolver<'a> {
     }
 }
 impl StmtVisitor for Resolver<'_> {
-    fn visit_block(&mut self, stmts: &[Stmt]) -> VisitorResult<()> {
+    fn visit_block(&mut self, stmts: &mut [Stmt]) -> VisitorResult<()> {
         self.begin_scope();
         self.resolve(stmts)?;
         self.end_scope();
         Ok(())
     }
-    fn visit_expression(&mut self, expr: &Expr) -> VisitorResult<()> {
+    fn visit_expression(&mut self, expr: &mut Expr) -> VisitorResult<()> {
         self.resolve_expr(expr)
     }
     fn visit_function(
         &mut self,
         name: &crate::syntax::token::Token,
         params: &[crate::syntax::token::Token],
-        body: &[Stmt],
+        body: &mut [Stmt],
     ) -> VisitorResult<()> {
         self.declare(name);
         self.define(name);
         self.resolve_function(name, params, body)
     }
-    fn visit_if(&mut self, cond: &Expr, body: &(Stmt, Option<Stmt>)) -> VisitorResult<()> {
+    fn visit_if(&mut self, cond: &mut Expr, body: &mut (Stmt, Option<Stmt>)) -> VisitorResult<()> {
         self.resolve_expr(cond)?;
-        self.resolve_stmt(&body.0)?;
-        if let Some(else_body) = &body.1 {
+        self.resolve_stmt(&mut body.0)?;
+        if let Some(else_body) = &mut body.1 {
             self.resolve_stmt(else_body)?;
         }
         Ok(())
     }
-    fn visit_print(&mut self, expr: &Expr) -> VisitorResult<()> {
+    fn visit_print(&mut self, expr: &mut Expr) -> VisitorResult<()> {
         self.resolve_expr(expr)
     }
     fn visit_return(
         &mut self,
         _: &crate::syntax::token::Token,
-        expr: Option<&Expr>,
+        expr: Option<&mut Expr>,
     ) -> VisitorResult<()> {
         if let Some(expr) = expr {
             self.resolve_expr(expr)?;
@@ -132,7 +121,7 @@ impl StmtVisitor for Resolver<'_> {
     fn visit_var(
         &mut self,
         token: &crate::syntax::token::Token,
-        expr: Option<&Expr>,
+        expr: Option<&mut Expr>,
     ) -> VisitorResult<()> {
         self.declare(token);
         if let Some(expr) = expr {
@@ -141,56 +130,79 @@ impl StmtVisitor for Resolver<'_> {
         self.define(token);
         Ok(())
     }
-    fn visit_while(&mut self, cond: &Expr, body: &Stmt) -> VisitorResult<()> {
+    fn visit_while(&mut self, cond: &mut Expr, body: &mut Stmt) -> VisitorResult<()> {
         self.resolve_expr(cond)?;
         self.resolve_stmt(body)?;
         Ok(())
     }
 }
 impl ExprVisitor for Resolver<'_> {
-    fn visit_assign(&mut self, token: &Token, expr: &Expr) -> VisitorResult<Literal> {
-        self.resolve_expr(expr)?;
-        self.resolve_local(token)?;
+    fn visit_assign(&mut self, assign: &mut Assign) -> VisitorResult<Literal> {
+        self.resolve_expr(&mut assign.value)?;
+        self.resolve_local(assign)?;
         Ok(Literal::Nil)
     }
-    fn visit_binary(&mut self, token: &Token, e1: &Expr, e2: &Expr) -> VisitorResult<Literal> {
+    fn visit_binary(
+        &mut self,
+        token: &Token,
+        e1: &mut Expr,
+        e2: &mut Expr,
+    ) -> VisitorResult<Literal> {
         self.resolve_expr(e1)?;
         self.resolve_expr(e2)?;
         Ok(Literal::Nil)
     }
-    fn visit_call(&mut self, callee: &Expr, _: &Token, args: &[Expr]) -> VisitorResult<Literal> {
+    fn visit_call(
+        &mut self,
+        callee: &mut Expr,
+        _: &Token,
+        args: &mut [Expr],
+    ) -> VisitorResult<Literal> {
         self.resolve_expr(callee)?;
         for arg in args {
             self.resolve_expr(arg)?;
         }
         Ok(Literal::Nil)
     }
-    fn visit_grouping(&mut self, expr: &Expr) -> VisitorResult<Literal> {
+    fn visit_grouping(&mut self, expr: &mut Expr) -> VisitorResult<Literal> {
         self.resolve_expr(expr)?;
         Ok(Literal::Nil)
     }
-    fn visit_literal(&mut self, literal: &Literal) -> VisitorResult<Literal> {
+    fn visit_literal(&mut self, _literal: &Literal) -> VisitorResult<Literal> {
         Ok(Literal::Nil)
     }
     fn visit_logical(
         &mut self,
-        left: &Expr,
+        left: &mut Expr,
         token: &Token,
-        right: &Expr,
+        right: &mut Expr,
     ) -> VisitorResult<Literal> {
         self.resolve_expr(left)?;
         self.resolve_expr(right)?;
         Ok(Literal::Nil)
     }
-    fn visit_unary(&mut self, token: &Token, expr: &Expr) -> VisitorResult<Literal> {
+    fn visit_unary(&mut self, token: &Token, expr: &mut Expr) -> VisitorResult<Literal> {
         self.resolve_expr(expr)?;
         Ok(Literal::Nil)
     }
-    fn visit_variable(&mut self, token: &Token) -> VisitorResult<Literal> {
-        if !self.scopes.is_empty() && self.scopes.last().unwrap().get(&token.lexeme).is_none() {
-            return Err(VisitorError::NotInitialized(token.clone()));
+    fn visit_variable(&mut self, variable: &mut Variable) -> VisitorResult<Literal> {
+        if !self.scopes.is_empty()
+            && self
+                .scopes
+                .last()
+                .unwrap()
+                .get(&variable.name.lexeme)
+                .map_or(false, |v| !v)
+        {
+            return Err(ResolverError::NotInitialized(variable.name.clone()).into());
         }
-        self.resolve_local(token)?;
+        self.resolve_local(variable)?;
         Ok(Literal::Nil)
     }
+}
+
+pub trait Resolvable {
+    fn name(&self) -> &Token;
+    fn set_dist(&mut self, dist: usize);
+    fn get_dist(&self) -> Option<usize>;
 }

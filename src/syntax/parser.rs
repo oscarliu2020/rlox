@@ -1,4 +1,4 @@
-use super::ast;
+use super::ast::{self, Assign, FnStmt, Variable};
 use super::token::{Literal, Token, TokenType};
 pub struct Parser<'a> {
     tokens: &'a [Token],
@@ -118,7 +118,7 @@ impl<'a> Parser<'a> {
             return Ok(ast::Expr::Grouping(Box::new(expr)));
         }
         if match_token!(self, [TokenType::IDENTIFIER]) {
-            return Ok(ast::Expr::Variable(self.previous().clone()));
+            return Ok(ast::Expr::Variable(Variable::new(self.previous().clone())));
         }
         self.error(self.peek(), "expected expression");
         Err(ParserError())
@@ -229,7 +229,7 @@ impl<'a> Parser<'a> {
             let value = self.assignment()?;
             match expr {
                 ast::Expr::Variable(name) => {
-                    return Ok(ast::Expr::Assign(name, Box::new(value)));
+                    return Ok(ast::Expr::Assign(Assign::new(name.name, Box::new(value))));
                 }
                 _ => {
                     self.error(&equals, "Invalid assignment target");
@@ -384,7 +384,7 @@ impl<'a> Parser<'a> {
             &format!("expected '{{' before {} body", kind),
         )?;
         let body = self.block()?;
-        Ok(ast::Stmt::Function(name.clone(), params, body))
+        Ok(ast::Stmt::Function(FnStmt::new(name.clone(), params, body)))
     }
     fn declaration(&mut self) -> Option<ast::Stmt> {
         // let res = if match_token!(self, [TokenType::VAR]) {
@@ -439,6 +439,7 @@ mod tests {
         let mut parser = Parser::new(tokens);
         let stmts = parser.parse().unwrap();
         let mut interpreter = Interpreter::default();
-        interpreter.interpret(&stmts);
+        let mut stmts: Option<Vec<_>> = stmts.into_iter().collect();
+        interpreter.interpret(stmts.as_mut().unwrap());
     }
 }

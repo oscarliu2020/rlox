@@ -3,7 +3,7 @@ use crate::syntax::{
     token::{Literal, Token},
 };
 use rustc_hash::FxHashMap;
-use std::{cell::RefCell, env, rc::Rc, sync::Arc};
+use std::{cell::RefCell, rc::Rc};
 pub type EnvironmentRef = Rc<RefCell<Environment>>;
 use thiserror::Error;
 #[derive(Error, Debug)]
@@ -17,6 +17,13 @@ pub trait Envt {
     fn define(&mut self, name: String, value: Literal);
     fn get(&self, name: &Token) -> Result<Literal, VisitorError>;
     fn assign(&mut self, name: &Token, value: Literal) -> Result<(), VisitorError>;
+    fn get_at(&self, distance: usize, name: &Token) -> Result<Literal, VisitorError>;
+    fn assign_at(
+        &mut self,
+        distance: usize,
+        name: &Token,
+        value: Literal,
+    ) -> Result<(), VisitorError>;
 }
 impl<T: Envt> Envt for Rc<RefCell<T>> {
     fn define(&mut self, name: String, value: Literal) {
@@ -27,6 +34,17 @@ impl<T: Envt> Envt for Rc<RefCell<T>> {
     }
     fn assign(&mut self, name: &Token, value: Literal) -> Result<(), VisitorError> {
         self.borrow_mut().assign(name, value)
+    }
+    fn get_at(&self, distance: usize, name: &Token) -> Result<Literal, VisitorError> {
+        self.borrow().get_at(distance, name)
+    }
+    fn assign_at(
+        &mut self,
+        distance: usize,
+        name: &Token,
+        value: Literal,
+    ) -> Result<(), VisitorError> {
+        self.borrow_mut().assign_at(distance, name, value)
     }
 }
 #[derive(Default)]
@@ -56,13 +74,19 @@ impl Environment {
             Ok(env)
         }
     }
-    pub fn get_at(&self, distance: usize, name: &str) -> Result<Literal, EnvironmentError> {
-        self.ancestor(distance).and_then(|env| {
-            env.values
-                .get(name)
-                .cloned()
-                .ok_or_else(|| EnvironmentError::UndefinedVariable(name.to_string()))
-        })
+    fn ancestor_mut(&mut self, distance: usize) -> Result<&mut Environment, EnvironmentError> {
+        unsafe {
+            let mut env = self;
+            for _ in 0..distance {
+                env = match &mut env.enclosing {
+                    Some(enclosing) => &mut *(enclosing.as_ptr()),
+                    None => {
+                        return Err(EnvironmentError::InvalidEnvironmentDistance);
+                    }
+                };
+            }
+            Ok(env)
+        }
     }
 }
 
@@ -99,6 +123,23 @@ impl Envt for Environment {
                 // error(name, "Undefined variable");
                 VisitorError::UndefinedVariable(name.clone())
             })
+    }
+    fn get_at(&self, distance: usize, name: &Token) -> Result<Literal, VisitorError> {
+        self.ancestor(distance).map_or_else(
+            |e_| Err(EnvironmentError::InvalidEnvironmentDistance.into()),
+            |env| env.get(name),
+        )
+    }
+    fn assign_at(
+        &mut self,
+        distance: usize,
+        name: &Token,
+        value: Literal,
+    ) -> Result<(), VisitorError> {
+        self.ancestor_mut(distance).map_or_else(
+            |_| Err(EnvironmentError::InvalidEnvironmentDistance.into()),
+            |env| env.assign(name, value),
+        )
     }
 }
 

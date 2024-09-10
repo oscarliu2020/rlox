@@ -1,4 +1,5 @@
 use super::interpreter::Interpreter;
+use super::resolver::Resolver;
 use super::syntax::{parser::Parser, tokenizer::Tokenizer};
 use std::fs;
 use std::io::{stdin, Write};
@@ -8,7 +9,14 @@ pub fn run(content: &str, interpreter: &mut Interpreter) {
     let mut parser = Parser::new(tokens);
     let stmts = parser.parse().unwrap();
     // let mut interpreter = Interpreter::default();
-    interpreter.interpret(&stmts);
+    let mut stmts: Option<Vec<_>> = stmts.into_iter().collect();
+    if stmts.is_none() {
+        eprintln!("Error parsing");
+        return;
+    }
+    let mut resolver = Resolver::new(interpreter);
+    resolver.resolve(stmts.as_mut().unwrap()).unwrap();
+    interpreter.interpret(stmts.as_mut().unwrap());
 }
 pub fn run_file(fname: &str) {
     let mut interpreter = Interpreter::default();

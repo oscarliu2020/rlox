@@ -1,7 +1,8 @@
 use rustc_hash::FxHashMap;
 
 use super::environment::{Environment, EnvironmentRef, Envt};
-use crate::syntax::ast::{Expr, ExprVisitor, Stmt, StmtVisitor};
+use crate::resolver::Resolvable;
+use crate::syntax::ast::{Assign, Expr, ExprVisitor, FnStmt, Stmt, StmtVisitor, Variable};
 use crate::syntax::token::{Func, Function, Literal, NativeFunc, Token, TokenType};
 use std::{cell::RefCell, rc::Rc};
 fn error(t: &Token, msg: &str) {
@@ -50,7 +51,7 @@ impl RloxCallable for Function {
     }
     fn call(self, interpreter: &mut Interpreter, args: Vec<Literal>) -> VisitorResult<Literal> {
         match self {
-            Function::Function(f) => {
+            Function::Function(mut f) => {
                 let mut func_env = Environment::new(Some(Rc::clone(&f.closure)));
                 for (param, arg) in f.params().iter().zip(args.iter()) {
                     func_env.define(param.lexeme.clone(), arg.clone());
@@ -68,12 +69,8 @@ impl RloxCallable for Function {
 }
 use crate::syntax::ast::{VisitorError, VisitorResult};
 impl Interpreter {
-    pub fn interpret(&mut self, stmts: &[Option<Stmt>]) {
+    pub fn interpret(&mut self, stmts: &mut [Stmt]) {
         for stmt in stmts {
-            let Some(stmt) = stmt.as_ref() else {
-                eprintln!("Error parsing statement");
-                break;
-            };
             if let Err(e) = self.execute(stmt) {
                 eprintln!("[Runtime Error] {e:#}");
                 break;
@@ -83,32 +80,13 @@ impl Interpreter {
     pub fn resolve(&mut self, token: &Token, depth: usize) {
         self.locals.insert(token as _, depth);
     }
-    fn evaluate(&mut self, expr: &Expr) -> VisitorResult<Literal> {
-        match expr {
-            Expr::Literal(ltr) => self.visit_literal(ltr),
-            Expr::Grouping(expr) => self.visit_grouping(expr),
-            Expr::Unary(token, expr) => self.visit_unary(token, expr),
-            Expr::Binary(e1, token, e2) => self.visit_binary(token, e1, e2),
-            Expr::Variable(token) => self.visit_variable(token),
-            Expr::Assign(token, expr) => self.visit_assign(token, expr),
-            Expr::Logical(e1, token, e2) => self.visit_logical(e1, token, e2),
-            Expr::Call(callee, paren, args) => self.visit_call(callee, paren, args),
-        }
+    fn evaluate(&mut self, expr: &mut Expr) -> VisitorResult<Literal> {
+        expr.accept(self)
     }
-    fn execute(&mut self, stmt: &Stmt) -> VisitorResult<()> {
-        match stmt {
-            Stmt::Block(stmts) => self.visit_block(stmts),
-            Stmt::Expression(expr) => self.visit_expression(expr),
-            Stmt::Print(expr) => self.visit_print(expr),
-            Stmt::Var(token, expr) => self.visit_var(token, expr.as_ref()),
-            Stmt::IfStmt(cond, body) => self.visit_if(cond, body),
-            Stmt::WhileStmt(cond, body) => self.visit_while(cond, body),
-            Stmt::Function(name, params, body) => self.visit_function(name, params, body),
-            Stmt::Return(token, expr) => self.visit_return(token, expr.as_ref()),
-            _ => Err(VisitorError::VistorError),
-        }
+    fn execute(&mut self, stmt: &mut Stmt) -> VisitorResult<()> {
+        stmt.accept(self)
     }
-    fn execute_block(&mut self, stmts: &[Stmt], block_env: Environment) -> VisitorResult<()> {
+    fn execute_block(&mut self, stmts: &mut [Stmt], block_env: Environment) -> VisitorResult<()> {
         let prev = Rc::clone(&self.environment);
 
         self.environment = Rc::new(RefCell::new(block_env));
@@ -132,58 +110,42 @@ impl Interpreter {
         self.environment = prev;
         Ok(())
     }
-    fn look_up_variable(&self, token: &Token) -> VisitorResult<Literal> {
-        self.locals.get(&(token as _)).map_or_else(
-            || self.global.get(token),
-            |&depth| {
-                self.environment
-                    .borrow()
-                    .get_at(depth, &token.lexeme)
-                    .map_err(|e| e.into())
-            },
-        )
+    fn look_up_variable(&self, variable: &mut impl Resolvable) -> VisitorResult<Literal> {
+        variable
+            .get_dist()
+            .map_or(self.global.get(variable.name()), |dist| {
+                self.environment.get_at(dist, variable.name())
+            })
     }
 }
 impl StmtVisitor for Interpreter {
-    fn visit_while(&mut self, cond: &Expr, body: &Stmt) -> VisitorResult<()> {
+    fn visit_while(&mut self, cond: &mut Expr, body: &mut Stmt) -> VisitorResult<()> {
         while self.evaluate(cond)?.is_truthy() {
             self.execute(body)?;
         }
         Ok(())
     }
-    fn visit_if(&mut self, cond: &Expr, body: &(Stmt, Option<Stmt>)) -> VisitorResult<()> {
+    fn visit_if(&mut self, cond: &mut Expr, body: &mut (Stmt, Option<Stmt>)) -> VisitorResult<()> {
         if self.evaluate(cond)?.is_truthy() {
-            self.execute(&body.0)?;
-        } else if let Some(else_stmt) = &body.1 {
+            self.execute(&mut body.0)?;
+        } else if let Some(else_stmt) = &mut body.1 {
             self.execute(else_stmt)?;
         }
         Ok(())
     }
-    fn visit_block(&mut self, stmts: &[Stmt]) -> VisitorResult<()> {
+    fn visit_block(&mut self, stmts: &mut [Stmt]) -> VisitorResult<()> {
         let block_env = Environment::new(Some(Rc::clone(&self.environment)));
         self.execute_block(stmts, block_env)
     }
-    fn visit_expression(&mut self, expr: &Expr) -> VisitorResult<()> {
-        // if let Ok(literal) = self.evaluate(expr) {
-        //     // println!("{}", literal);
-        //     Ok(())
-        // } else {
-        //     Err(VisitorError::VistorError)
-        // }
+    fn visit_expression(&mut self, expr: &mut Expr) -> VisitorResult<()> {
         self.evaluate(expr).map(|_| ())
     }
-    fn visit_print(&mut self, expr: &Expr) -> VisitorResult<()> {
-        // if let Ok(literal) = self.evaluate(expr) {
-        //     println!("{}", literal);
-        //     Ok(())
-        // } else {
-        //     Err(VisitorError::VistorError)
-        // }
+    fn visit_print(&mut self, expr: &mut Expr) -> VisitorResult<()> {
         self.evaluate(expr).map(|res| {
             println!("{}", res);
         })
     }
-    fn visit_var(&mut self, token: &Token, expr: Option<&Expr>) -> VisitorResult<()> {
+    fn visit_var(&mut self, token: &Token, expr: Option<&mut Expr>) -> VisitorResult<()> {
         let value = if let Some(expr) = expr {
             self.evaluate(expr)?
         } else {
@@ -198,17 +160,21 @@ impl StmtVisitor for Interpreter {
         &mut self,
         name: &Token,
         params: &[Token],
-        body: &[Stmt],
+        body: &mut [Stmt],
     ) -> VisitorResult<()> {
         let new_func = Function::Function(Func {
-            decl: Rc::new(Stmt::Function(name.clone(), params.to_vec(), body.to_vec())),
+            decl: Box::new(FnStmt {
+                name: name.clone(),
+                params: params.to_vec(),
+                body: body.to_vec(),
+            }),
             closure: Rc::clone(&self.environment),
         });
         self.environment
             .define(name.lexeme.clone(), Literal::Callable(new_func));
         Ok(())
     }
-    fn visit_return(&mut self, token: &Token, expr: Option<&Expr>) -> VisitorResult<()> {
+    fn visit_return(&mut self, _token: &Token, expr: Option<&mut Expr>) -> VisitorResult<()> {
         let value = if let Some(expr) = expr {
             self.evaluate(expr)?
         } else {
@@ -221,9 +187,9 @@ impl StmtVisitor for Interpreter {
 impl ExprVisitor for Interpreter {
     fn visit_call(
         &mut self,
-        callee: &Expr,
+        callee: &mut Expr,
         paren: &Token,
-        args: &[Expr],
+        args: &mut [Expr],
     ) -> VisitorResult<Literal> {
         let callee = self.evaluate(callee)?;
         let mut arguments = Vec::new();
@@ -246,9 +212,9 @@ impl ExprVisitor for Interpreter {
     }
     fn visit_logical(
         &mut self,
-        left: &Expr,
+        left: &mut Expr,
         token: &Token,
-        right: &Expr,
+        right: &mut Expr,
     ) -> VisitorResult<Literal> {
         let l = self.evaluate(left)?;
         match token.token_type {
@@ -272,14 +238,15 @@ impl ExprVisitor for Interpreter {
     fn visit_literal(&mut self, ltr: &Literal) -> VisitorResult<Literal> {
         Ok(ltr.clone())
     }
-    fn visit_variable(&mut self, token: &Token) -> VisitorResult<Literal> {
+    fn visit_variable(&mut self, variable: &mut Variable) -> VisitorResult<Literal> {
         // self.environment.borrow().get(token)
-        self.look_up_variable(token)
+        // self.look_up_variable(token)
+        self.look_up_variable(variable)
     }
-    fn visit_grouping(&mut self, expr: &Expr) -> VisitorResult<Literal> {
+    fn visit_grouping(&mut self, expr: &mut Expr) -> VisitorResult<Literal> {
         self.evaluate(expr)
     }
-    fn visit_unary(&mut self, token: &Token, expr: &Expr) -> VisitorResult<Literal> {
+    fn visit_unary(&mut self, token: &Token, expr: &mut Expr) -> VisitorResult<Literal> {
         let right = self.evaluate(expr)?;
         match token.token_type {
             TokenType::MINUS => match right {
@@ -287,13 +254,15 @@ impl ExprVisitor for Interpreter {
                 _ => Err(VisitorError::VistorError),
             },
             TokenType::BANG => Ok(Literal::Boolean(!right.is_truthy())),
-            _ => {
-                // error(token, "Unknown unary operator");
-                Err(VisitorError::UnknownOperator(token.clone(), "unary"))
-            }
+            _ => Err(VisitorError::UnknownOperator(token.clone(), "unary")),
         }
     }
-    fn visit_binary(&mut self, token: &Token, e1: &Expr, e2: &Expr) -> VisitorResult<Literal> {
+    fn visit_binary(
+        &mut self,
+        token: &Token,
+        e1: &mut Expr,
+        e2: &mut Expr,
+    ) -> VisitorResult<Literal> {
         let l = self.evaluate(e1)?;
         let r = self.evaluate(e2)?;
         match token.token_type {
@@ -361,10 +330,23 @@ impl ExprVisitor for Interpreter {
             }
         }
     }
-    fn visit_assign(&mut self, token: &Token, expr: &Expr) -> VisitorResult<Literal> {
-        let value = self.evaluate(expr)?;
-        self.environment.borrow_mut().assign(token, value.clone())?;
-        Ok(value)
+    fn visit_assign(&mut self, assign: &mut Assign) -> VisitorResult<Literal> {
+        let value = self.evaluate(&mut assign.value)?;
+        // self.environment
+        //     .borrow_mut()
+        //     .assign(assign.name(), value.clone())?;
+        // Ok(value)
+        assign
+            .get_dist()
+            .map_or_else(
+                || self.global.assign(assign.name(), value.clone()),
+                |dist| {
+                    self.environment
+                        .assign_at(dist, assign.name(), value.clone())
+                },
+            )
+            .map(|_| Literal::Nil)
+        // todo!()
     }
 }
 
@@ -398,6 +380,7 @@ mod tests {
             &mut interpreter,
         );
     }
+    #[should_panic]
     #[test]
     fn test_blcok2() {
         let mut interpreter = Interpreter::default();

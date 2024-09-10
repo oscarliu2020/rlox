@@ -56,11 +56,10 @@ pub fn get_keywords(s: impl AsRef<str>) -> Option<TokenType> {
 }
 use crate::environment::EnvironmentRef;
 
-use super::ast::Stmt;
-use std::rc::Rc;
+use super::ast::{FnStmt, Stmt};
 #[derive(Clone)]
 pub struct Func {
-    pub decl: Rc<Stmt>,
+    pub decl: Box<FnStmt>,
     pub closure: EnvironmentRef,
 }
 impl PartialEq for Func {
@@ -70,22 +69,25 @@ impl PartialEq for Func {
 }
 impl Func {
     pub fn name(&self) -> &str {
-        match &*self.decl {
-            Stmt::Function(name, _, _) => &name.lexeme,
-            _ => panic!("Not a function"),
-        }
+        // match &*self.decl {
+        //     Stmt::Function(name, _, _) => &name.lexeme,
+        //     _ => panic!("Not a function"),
+        // }
+        &self.decl.name.lexeme
     }
     pub fn params(&self) -> &Vec<Token> {
-        match &*self.decl {
-            Stmt::Function(_, params, _) => params,
-            _ => panic!("Not a function"),
-        }
+        // match &*self.decl {
+        //     Stmt::Function(_, params, _) => params,
+        //     _ => panic!("Not a function"),
+        // }
+        &self.decl.params
     }
-    pub fn body(&self) -> &Vec<Stmt> {
-        match &*self.decl {
-            Stmt::Function(_, _, body) => body,
-            _ => panic!("Not a function"),
-        }
+    pub fn body(&mut self) -> &mut Vec<Stmt> {
+        // match &*self.decl {
+        //     Stmt::Function(_, _, body) => body,
+        //     _ => panic!("Not a function"),
+        // }
+        &mut self.decl.body
     }
 }
 #[derive(Debug, Clone, PartialEq)]
