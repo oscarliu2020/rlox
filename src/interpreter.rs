@@ -500,4 +500,33 @@ counter(); // "2".
             &mut interpreter,
         );
     }
+    #[test]
+    fn test_rec() {
+        let mut interpreter = Interpreter::default();
+        run(
+            r#"
+            fun fib(n) {
+                if (n <= 1) return n;
+                return fib(n - 1) + fib(n - 2);
+            }
+            for (var i = 0; i < 20; i = i + 1) {
+                print fib(i);
+            }
+        "#,
+            &mut interpreter,
+        );
+    }
+    #[test]
+    fn test_fn() {
+        let mut interpreter = Interpreter::default();
+        run(
+            r#"
+            fun foo() {
+                print "foo";
+            }
+            foo();
+        "#,
+            &mut interpreter,
+        );
+    }
 }
