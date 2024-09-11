@@ -1,5 +1,6 @@
 use super::super::{environment::EnvironmentError, resolver::ResolverError};
 use super::token::{Literal, Token};
+use std::cell::Cell;
 use std::fmt::{Display, Formatter};
 use thiserror::Error;
 #[non_exhaustive]
@@ -74,7 +75,7 @@ impl FnStmt {
 #[derive(Clone, PartialEq, Debug)]
 pub struct Variable {
     pub name: Token,
-    pub dist: Option<usize>,
+    pub dist: Cell<Option<usize>>,
 }
 impl Display for Variable {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -83,14 +84,17 @@ impl Display for Variable {
 }
 impl Variable {
     pub fn new(name: Token) -> Self {
-        Self { name, dist: None }
+        Self {
+            name,
+            dist: Cell::new(None),
+        }
     }
 }
 #[derive(Clone, Debug, PartialEq)]
 pub struct Assign {
     pub name: Token,
     pub value: Box<Expr>,
-    pub dist: Option<usize>,
+    pub dist: Cell<Option<usize>>,
 }
 impl Display for Assign {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -102,7 +106,7 @@ impl Assign {
         Self {
             name,
             value,
-            dist: None,
+            dist: Cell::new(None),
         }
     }
 }
@@ -135,63 +139,50 @@ pub enum VisitorError {
 }
 pub type VisitorResult<T> = Result<T, VisitorError>;
 pub trait ExprVisitor {
-    fn visit_binary(
-        &mut self,
-        token: &Token,
-        e1: &mut Expr,
-        e2: &mut Expr,
-    ) -> VisitorResult<Literal>;
-    fn visit_grouping(&mut self, expr: &mut Expr) -> VisitorResult<Literal>;
+    fn visit_binary(&mut self, token: &Token, e1: &Expr, e2: &Expr) -> VisitorResult<Literal>;
+    fn visit_grouping(&mut self, expr: &Expr) -> VisitorResult<Literal>;
     fn visit_literal(&mut self, ltr: &Literal) -> VisitorResult<Literal>;
-    fn visit_unary(&mut self, token: &Token, expr: &mut Expr) -> VisitorResult<Literal>;
-    fn visit_variable(&mut self, variable: &mut Variable) -> VisitorResult<Literal>;
-    fn visit_assign(&mut self, assign: &mut Assign) -> VisitorResult<Literal>;
-    fn visit_logical(
-        &mut self,
-        left: &mut Expr,
-        token: &Token,
-        right: &mut Expr,
-    ) -> VisitorResult<Literal>;
-    fn visit_call(
-        &mut self,
-        callee: &mut Expr,
-        paren: &Token,
-        args: &mut [Expr],
-    ) -> VisitorResult<Literal>;
+    fn visit_unary(&mut self, token: &Token, expr: &Expr) -> VisitorResult<Literal>;
+    fn visit_variable(&mut self, variable: &Variable) -> VisitorResult<Literal>;
+    fn visit_assign(&mut self, assign: &Assign) -> VisitorResult<Literal>;
+    fn visit_logical(&mut self, left: &Expr, token: &Token, right: &Expr)
+        -> VisitorResult<Literal>;
+    fn visit_call(&mut self, callee: &Expr, paren: &Token, args: &[Expr])
+        -> VisitorResult<Literal>;
 }
 pub trait StmtVisitor {
-    fn visit_while(&mut self, cond: &mut Expr, body: &mut Stmt) -> VisitorResult<()>;
-    fn visit_expression(&mut self, expr: &mut Expr) -> VisitorResult<()>;
-    fn visit_print(&mut self, expr: &mut Expr) -> VisitorResult<()>;
-    fn visit_var(&mut self, token: &Token, expr: Option<&mut Expr>) -> VisitorResult<()>;
-    fn visit_block(&mut self, stmts: &mut [Stmt]) -> VisitorResult<()>;
-    fn visit_if(&mut self, cond: &mut Expr, body: &mut (Stmt, Option<Stmt>)) -> VisitorResult<()>;
+    fn visit_while(&mut self, cond: &Expr, body: &Stmt) -> VisitorResult<()>;
+    fn visit_expression(&mut self, expr: &Expr) -> VisitorResult<()>;
+    fn visit_print(&mut self, expr: &Expr) -> VisitorResult<()>;
+    fn visit_var(&mut self, token: &Token, expr: Option<&Expr>) -> VisitorResult<()>;
+    fn visit_block(&mut self, stmts: &[Stmt]) -> VisitorResult<()>;
+    fn visit_if(&mut self, cond: &Expr, body: &(Stmt, Option<Stmt>)) -> VisitorResult<()>;
     fn visit_function(
         &mut self,
         name: &Token,
         params: &[Token],
-        body: &mut [Stmt],
+        body: &[Stmt],
     ) -> VisitorResult<()>;
-    fn visit_return(&mut self, token: &Token, expr: Option<&mut Expr>) -> VisitorResult<()>;
+    fn visit_return(&mut self, token: &Token, expr: Option<&Expr>) -> VisitorResult<()>;
 }
 impl Stmt {
-    pub fn accept(&mut self, visitor: &mut impl StmtVisitor) -> VisitorResult<()> {
+    pub fn accept(&self, visitor: &mut impl StmtVisitor) -> VisitorResult<()> {
         match self {
             Stmt::Expression(expr) => visitor.visit_expression(expr),
             Stmt::Print(expr) => visitor.visit_print(expr),
-            Stmt::Var(token, expr) => visitor.visit_var(token, expr.as_mut()),
+            Stmt::Var(token, expr) => visitor.visit_var(token, expr.as_ref()),
             Stmt::Block(stmts) => visitor.visit_block(stmts),
             Stmt::IfStmt(cond, body) => visitor.visit_if(cond, body),
             Stmt::WhileStmt(cond, body) => visitor.visit_while(cond, body),
             Stmt::Function(FnStmt { name, params, body }) => {
                 visitor.visit_function(name, params, body)
             }
-            Stmt::Return(token, expr) => visitor.visit_return(token, expr.as_mut()),
+            Stmt::Return(token, expr) => visitor.visit_return(token, expr.as_ref()),
         }
     }
 }
 impl Expr {
-    pub fn accept(&mut self, visitor: &mut impl ExprVisitor) -> VisitorResult<Literal> {
+    pub fn accept(&self, visitor: &mut impl ExprVisitor) -> VisitorResult<Literal> {
         match self {
             Expr::Binary(e1, token, e2) => visitor.visit_binary(token, e1, e2),
             Expr::Grouping(expr) => visitor.visit_grouping(expr),
@@ -210,10 +201,10 @@ impl Resolvable for Variable {
         &self.name
     }
     fn get_dist(&self) -> Option<usize> {
-        self.dist
+        self.dist.get()
     }
-    fn set_dist(&mut self, dist: usize) {
-        self.dist = Some(dist);
+    fn set_dist(&self, dist: usize) {
+        self.dist.set(Some(dist));
     }
 }
 impl Resolvable for Assign {
@@ -221,9 +212,9 @@ impl Resolvable for Assign {
         &self.name
     }
     fn get_dist(&self) -> Option<usize> {
-        self.dist
+        self.dist.get()
     }
-    fn set_dist(&mut self, dist: usize) {
-        self.dist = Some(dist);
+    fn set_dist(&self, dist: usize) {
+        self.dist.set(Some(dist));
     }
 }

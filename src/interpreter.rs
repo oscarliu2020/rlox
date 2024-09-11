@@ -43,6 +43,7 @@ impl RloxCallable for Function {
         match self {
             Function::Function(func) => func.params().len(),
             Function::Native(native) => native.arity,
+            Function::None => unreachable!(),
         }
     }
     fn call(self, interpreter: &mut Interpreter, args: Vec<Literal>) -> VisitorResult<Literal> {
@@ -60,12 +61,13 @@ impl RloxCallable for Function {
                 // todo!()
             }
             Function::Native(native) => Ok((native.func)()),
+            Function::None => unreachable!(),
         }
     }
 }
 use crate::syntax::ast::{VisitorError, VisitorResult};
 impl Interpreter {
-    pub fn interpret(&mut self, stmts: &mut [Stmt]) {
+    pub fn interpret(&mut self, stmts: &[Stmt]) {
         for stmt in stmts {
             if let Err(e) = self.execute(stmt) {
                 eprintln!("[Runtime Error] {e:#}");
@@ -76,13 +78,13 @@ impl Interpreter {
     pub fn resolve(&mut self, token: &Token, depth: usize) {
         self.locals.insert(token as _, depth);
     }
-    fn evaluate(&mut self, expr: &mut Expr) -> VisitorResult<Literal> {
+    fn evaluate(&mut self, expr: &Expr) -> VisitorResult<Literal> {
         expr.accept(self)
     }
-    fn execute(&mut self, stmt: &mut Stmt) -> VisitorResult<()> {
+    fn execute(&mut self, stmt: &Stmt) -> VisitorResult<()> {
         stmt.accept(self)
     }
-    fn execute_block(&mut self, stmts: &mut [Stmt], block_env: Environment) -> VisitorResult<()> {
+    fn execute_block(&mut self, stmts: &[Stmt], block_env: Environment) -> VisitorResult<()> {
         let prev = Rc::clone(&self.environment);
 
         self.environment = Rc::new(RefCell::new(block_env));
@@ -106,7 +108,7 @@ impl Interpreter {
         self.environment = prev;
         Ok(())
     }
-    fn look_up_variable(&self, variable: &mut impl Resolvable) -> VisitorResult<Literal> {
+    fn look_up_variable(&self, variable: &impl Resolvable) -> VisitorResult<Literal> {
         variable
             .get_dist()
             .map_or(self.global.get(variable.name()), |dist| {
@@ -115,33 +117,21 @@ impl Interpreter {
     }
 }
 impl StmtVisitor for Interpreter {
-    fn visit_while(&mut self, cond: &mut Expr, body: &mut Stmt) -> VisitorResult<()> {
+    fn visit_while(&mut self, cond: &Expr, body: &Stmt) -> VisitorResult<()> {
         while self.evaluate(cond)?.is_truthy() {
             self.execute(body)?;
         }
         Ok(())
     }
-    fn visit_if(&mut self, cond: &mut Expr, body: &mut (Stmt, Option<Stmt>)) -> VisitorResult<()> {
-        if self.evaluate(cond)?.is_truthy() {
-            self.execute(&mut body.0)?;
-        } else if let Some(else_stmt) = &mut body.1 {
-            self.execute(else_stmt)?;
-        }
-        Ok(())
-    }
-    fn visit_block(&mut self, stmts: &mut [Stmt]) -> VisitorResult<()> {
-        let block_env = Environment::new(Some(Rc::clone(&self.environment)));
-        self.execute_block(stmts, block_env)
-    }
-    fn visit_expression(&mut self, expr: &mut Expr) -> VisitorResult<()> {
+    fn visit_expression(&mut self, expr: &Expr) -> VisitorResult<()> {
         self.evaluate(expr).map(|_| ())
     }
-    fn visit_print(&mut self, expr: &mut Expr) -> VisitorResult<()> {
+    fn visit_print(&mut self, expr: &Expr) -> VisitorResult<()> {
         self.evaluate(expr).map(|res| {
             println!("{}", res);
         })
     }
-    fn visit_var(&mut self, token: &Token, expr: Option<&mut Expr>) -> VisitorResult<()> {
+    fn visit_var(&mut self, token: &Token, expr: Option<&Expr>) -> VisitorResult<()> {
         let value = if let Some(expr) = expr {
             self.evaluate(expr)?
         } else {
@@ -152,14 +142,26 @@ impl StmtVisitor for Interpreter {
             .define(token.lexeme.clone(), value);
         Ok(())
     }
+    fn visit_block(&mut self, stmts: &[Stmt]) -> VisitorResult<()> {
+        let block_env = Environment::new(Some(Rc::clone(&self.environment)));
+        self.execute_block(stmts, block_env)
+    }
+    fn visit_if(&mut self, cond: &Expr, body: &(Stmt, Option<Stmt>)) -> VisitorResult<()> {
+        if self.evaluate(cond)?.is_truthy() {
+            self.execute(&body.0)?;
+        } else if let Some(else_stmt) = &body.1 {
+            self.execute(else_stmt)?;
+        }
+        Ok(())
+    }
     fn visit_function(
         &mut self,
         name: &Token,
         params: &[Token],
-        body: &mut [Stmt],
+        body: &[Stmt],
     ) -> VisitorResult<()> {
         let new_func = Function::Function(Func {
-            decl: Box::new(FnStmt {
+            decl: Rc::new(FnStmt {
                 name: name.clone(),
                 params: params.to_vec(),
                 body: body.to_vec(),
@@ -170,7 +172,7 @@ impl StmtVisitor for Interpreter {
             .define(name.lexeme.clone(), Literal::Callable(new_func));
         Ok(())
     }
-    fn visit_return(&mut self, _token: &Token, expr: Option<&mut Expr>) -> VisitorResult<()> {
+    fn visit_return(&mut self, _token: &Token, expr: Option<&Expr>) -> VisitorResult<()> {
         let value = if let Some(expr) = expr {
             self.evaluate(expr)?
         } else {
@@ -181,84 +183,7 @@ impl StmtVisitor for Interpreter {
 }
 
 impl ExprVisitor for Interpreter {
-    fn visit_call(
-        &mut self,
-        callee: &mut Expr,
-        paren: &Token,
-        args: &mut [Expr],
-    ) -> VisitorResult<Literal> {
-        let callee = self.evaluate(callee)?;
-        let mut arguments = Vec::new();
-        for arg in args {
-            arguments.push(self.evaluate(arg)?);
-        }
-        match callee {
-            Literal::Callable(callable) => {
-                if arguments.len() != callable.arity() {
-                    return Err(VisitorError::ArityNotMatched(
-                        callable.arity(),
-                        arguments.len(),
-                        paren.clone(),
-                    ));
-                }
-                callable.call(self, arguments)
-            }
-            _ => Err(VisitorError::VistorError),
-        }
-    }
-    fn visit_logical(
-        &mut self,
-        left: &mut Expr,
-        token: &Token,
-        right: &mut Expr,
-    ) -> VisitorResult<Literal> {
-        let l = self.evaluate(left)?;
-        match token.token_type {
-            TokenType::OR => {
-                if l.is_truthy() {
-                    return Ok(l);
-                }
-            }
-            TokenType::AND => {
-                if !l.is_truthy() {
-                    return Ok(l);
-                }
-            }
-            _ => {
-                // error(token, "Unknown logical operator");
-                return Err(VisitorError::UnknownOperator(token.clone(), "logical"));
-            }
-        }
-        self.evaluate(right)
-    }
-    fn visit_literal(&mut self, ltr: &Literal) -> VisitorResult<Literal> {
-        Ok(ltr.clone())
-    }
-    fn visit_variable(&mut self, variable: &mut Variable) -> VisitorResult<Literal> {
-        // self.environment.borrow().get(token)
-        // self.look_up_variable(token)
-        self.look_up_variable(variable)
-    }
-    fn visit_grouping(&mut self, expr: &mut Expr) -> VisitorResult<Literal> {
-        self.evaluate(expr)
-    }
-    fn visit_unary(&mut self, token: &Token, expr: &mut Expr) -> VisitorResult<Literal> {
-        let right = self.evaluate(expr)?;
-        match token.token_type {
-            TokenType::MINUS => match right {
-                Literal::Number(n) => Ok(Literal::Number(-n)),
-                _ => Err(VisitorError::VistorError),
-            },
-            TokenType::BANG => Ok(Literal::Boolean(!right.is_truthy())),
-            _ => Err(VisitorError::UnknownOperator(token.clone(), "unary")),
-        }
-    }
-    fn visit_binary(
-        &mut self,
-        token: &Token,
-        e1: &mut Expr,
-        e2: &mut Expr,
-    ) -> VisitorResult<Literal> {
+    fn visit_binary(&mut self, token: &Token, e1: &Expr, e2: &Expr) -> VisitorResult<Literal> {
         let l = self.evaluate(e1)?;
         let r = self.evaluate(e2)?;
         match token.token_type {
@@ -326,8 +251,30 @@ impl ExprVisitor for Interpreter {
             }
         }
     }
-    fn visit_assign(&mut self, assign: &mut Assign) -> VisitorResult<Literal> {
-        let value = self.evaluate(&mut assign.value)?;
+    fn visit_grouping(&mut self, expr: &Expr) -> VisitorResult<Literal> {
+        self.evaluate(expr)
+    }
+    fn visit_literal(&mut self, ltr: &Literal) -> VisitorResult<Literal> {
+        Ok(ltr.clone())
+    }
+    fn visit_unary(&mut self, token: &Token, expr: &Expr) -> VisitorResult<Literal> {
+        let right = self.evaluate(expr)?;
+        match token.token_type {
+            TokenType::MINUS => match right {
+                Literal::Number(n) => Ok(Literal::Number(-n)),
+                _ => Err(VisitorError::VistorError),
+            },
+            TokenType::BANG => Ok(Literal::Boolean(!right.is_truthy())),
+            _ => Err(VisitorError::UnknownOperator(token.clone(), "unary")),
+        }
+    }
+    fn visit_variable(&mut self, variable: &Variable) -> VisitorResult<Literal> {
+        // self.environment.borrow().get(token)
+        // self.look_up_variable(token)
+        self.look_up_variable(variable)
+    }
+    fn visit_assign(&mut self, assign: &Assign) -> VisitorResult<Literal> {
+        let value = self.evaluate(&assign.value)?;
         // self.environment
         //     .borrow_mut()
         //     .assign(assign.name(), value.clone())?;
@@ -343,6 +290,56 @@ impl ExprVisitor for Interpreter {
             )
             .map(|_| value)
         // todo!()
+    }
+    fn visit_logical(
+        &mut self,
+        left: &Expr,
+        token: &Token,
+        right: &Expr,
+    ) -> VisitorResult<Literal> {
+        let l = self.evaluate(left)?;
+        match token.token_type {
+            TokenType::OR => {
+                if l.is_truthy() {
+                    return Ok(l);
+                }
+            }
+            TokenType::AND => {
+                if !l.is_truthy() {
+                    return Ok(l);
+                }
+            }
+            _ => {
+                // error(token, "Unknown logical operator");
+                return Err(VisitorError::UnknownOperator(token.clone(), "logical"));
+            }
+        }
+        self.evaluate(right)
+    }
+    fn visit_call(
+        &mut self,
+        callee: &Expr,
+        paren: &Token,
+        args: &[Expr],
+    ) -> VisitorResult<Literal> {
+        let callee = self.evaluate(callee)?;
+        let mut arguments = Vec::new();
+        for arg in args {
+            arguments.push(self.evaluate(arg)?);
+        }
+        match callee {
+            Literal::Callable(callable) => {
+                if arguments.len() != callable.arity() {
+                    return Err(VisitorError::ArityNotMatched(
+                        callable.arity(),
+                        arguments.len(),
+                        paren.clone(),
+                    ));
+                }
+                callable.call(self, arguments)
+            }
+            _ => Err(VisitorError::VistorError),
+        }
     }
 }
 
@@ -536,6 +533,20 @@ counter(); // "2".
                 var a=1;
                 var a=2;
             }
+        "#,
+            &mut interpreter,
+        );
+    }
+    #[test]
+    fn test_invalid_ret() {
+        let mut interpreter = Interpreter::default();
+        run(
+            r#"
+            fun foo() {
+                return 1;
+            }
+            foo();
+            return 2;
         "#,
             &mut interpreter,
         );

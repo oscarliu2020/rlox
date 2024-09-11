@@ -1,4 +1,7 @@
-use std::fmt::{self, Display};
+use std::{
+    fmt::{self, Display},
+    rc::Rc,
+};
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenType {
@@ -59,7 +62,7 @@ use crate::environment::EnvironmentRef;
 use super::ast::{FnStmt, Stmt};
 #[derive(Clone)]
 pub struct Func {
-    pub decl: Box<FnStmt>,
+    pub decl: Rc<FnStmt>,
     pub closure: EnvironmentRef,
 }
 impl PartialEq for Func {
@@ -75,19 +78,19 @@ impl Func {
         // }
         &self.decl.name.lexeme
     }
-    pub fn params(&self) -> &Vec<Token> {
+    pub fn params(&self) -> &[Token] {
         // match &*self.decl {
         //     Stmt::Function(_, params, _) => params,
         //     _ => panic!("Not a function"),
         // }
         &self.decl.params
     }
-    pub fn body(&mut self) -> &mut Vec<Stmt> {
+    pub fn body(&mut self) -> &[Stmt] {
         // match &*self.decl {
         //     Stmt::Function(_, _, body) => body,
         //     _ => panic!("Not a function"),
         // }
-        &mut self.decl.body
+        &self.decl.body
     }
 }
 #[derive(Debug, Clone, PartialEq)]
@@ -98,6 +101,7 @@ pub struct NativeFunc {
 }
 #[derive(Clone, PartialEq)]
 pub enum Function {
+    None,
     Function(Func), //0:parameters,1:body
     Native(NativeFunc),
 }
@@ -109,6 +113,9 @@ impl Function {
             }
             Function::Native(native) => {
                 write!(f, "native function {}", native.name)
+            }
+            Function::None => {
+                write!(f, "none")
             }
         }
     }

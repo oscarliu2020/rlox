@@ -21,19 +21,19 @@ impl Resolver {
     pub fn new() -> Self {
         Resolver { scopes: vec![] }
     }
-    pub fn resolve(&mut self, stmts: &mut [Stmt]) -> VisitorResult<()> {
+    pub fn resolve(&mut self, stmts: &[Stmt]) -> VisitorResult<()> {
         for stmt in stmts {
             self.resolve_stmt(stmt)?;
         }
         Ok(())
     }
-    fn resolve_stmt(&mut self, stmt: &mut Stmt) -> VisitorResult<()> {
+    fn resolve_stmt(&mut self, stmt: &Stmt) -> VisitorResult<()> {
         stmt.accept(self)
     }
-    fn resolve_expr(&mut self, expr: &mut Expr) -> VisitorResult<()> {
+    fn resolve_expr(&mut self, expr: &Expr) -> VisitorResult<()> {
         expr.accept(self).map(|_| ())
     }
-    fn resolve_local(&mut self, token: &mut impl Resolvable) -> VisitorResult<()> {
+    fn resolve_local(&mut self, token: &impl Resolvable) -> VisitorResult<()> {
         for (i, scope) in self.scopes.iter().enumerate().rev() {
             if scope.contains_key(&token.name().lexeme) {
                 token.set_dist(self.scopes.len() - 1 - i);
@@ -74,7 +74,7 @@ impl Resolver {
         &mut self,
         _: &Token,
         params: &[Token],
-        body: &mut [Stmt],
+        body: &[Stmt],
     ) -> VisitorResult<()> {
         self.begin_scope();
         for param in params {
@@ -87,40 +87,40 @@ impl Resolver {
     }
 }
 impl StmtVisitor for Resolver {
-    fn visit_block(&mut self, stmts: &mut [Stmt]) -> VisitorResult<()> {
+    fn visit_block(&mut self, stmts: &[Stmt]) -> VisitorResult<()> {
         self.begin_scope();
         self.resolve(stmts)?;
         self.end_scope();
         Ok(())
     }
-    fn visit_expression(&mut self, expr: &mut Expr) -> VisitorResult<()> {
+    fn visit_expression(&mut self, expr: &Expr) -> VisitorResult<()> {
         self.resolve_expr(expr)
     }
     fn visit_function(
         &mut self,
         name: &crate::syntax::token::Token,
         params: &[crate::syntax::token::Token],
-        body: &mut [Stmt],
+        body: &[Stmt],
     ) -> VisitorResult<()> {
         self.declare(name)?;
         self.define(name);
         self.resolve_function(name, params, body)
     }
-    fn visit_if(&mut self, cond: &mut Expr, body: &mut (Stmt, Option<Stmt>)) -> VisitorResult<()> {
+    fn visit_if(&mut self, cond: &Expr, body: &(Stmt, Option<Stmt>)) -> VisitorResult<()> {
         self.resolve_expr(cond)?;
-        self.resolve_stmt(&mut body.0)?;
-        if let Some(else_body) = &mut body.1 {
+        self.resolve_stmt(&body.0)?;
+        if let Some(else_body) = &body.1 {
             self.resolve_stmt(else_body)?;
         }
         Ok(())
     }
-    fn visit_print(&mut self, expr: &mut Expr) -> VisitorResult<()> {
+    fn visit_print(&mut self, expr: &Expr) -> VisitorResult<()> {
         self.resolve_expr(expr)
     }
     fn visit_return(
         &mut self,
         _: &crate::syntax::token::Token,
-        expr: Option<&mut Expr>,
+        expr: Option<&Expr>,
     ) -> VisitorResult<()> {
         if let Some(expr) = expr {
             self.resolve_expr(expr)?;
@@ -130,7 +130,7 @@ impl StmtVisitor for Resolver {
     fn visit_var(
         &mut self,
         token: &crate::syntax::token::Token,
-        expr: Option<&mut Expr>,
+        expr: Option<&Expr>,
     ) -> VisitorResult<()> {
         self.declare(token)?;
         if let Some(expr) = expr {
@@ -139,57 +139,47 @@ impl StmtVisitor for Resolver {
         self.define(token);
         Ok(())
     }
-    fn visit_while(&mut self, cond: &mut Expr, body: &mut Stmt) -> VisitorResult<()> {
+    fn visit_while(&mut self, cond: &Expr, body: &Stmt) -> VisitorResult<()> {
         self.resolve_expr(cond)?;
         self.resolve_stmt(body)?;
         Ok(())
     }
 }
 impl ExprVisitor for Resolver {
-    fn visit_assign(&mut self, assign: &mut Assign) -> VisitorResult<Literal> {
-        self.resolve_expr(&mut assign.value)?;
+    fn visit_assign(&mut self, assign: &Assign) -> VisitorResult<Literal> {
+        self.resolve_expr(&assign.value)?;
         self.resolve_local(assign)?;
         Ok(Literal::Nil)
     }
-    fn visit_binary(&mut self, _: &Token, e1: &mut Expr, e2: &mut Expr) -> VisitorResult<Literal> {
+    fn visit_binary(&mut self, _: &Token, e1: &Expr, e2: &Expr) -> VisitorResult<Literal> {
         self.resolve_expr(e1)?;
         self.resolve_expr(e2)?;
         Ok(Literal::Nil)
     }
-    fn visit_call(
-        &mut self,
-        callee: &mut Expr,
-        _: &Token,
-        args: &mut [Expr],
-    ) -> VisitorResult<Literal> {
+    fn visit_call(&mut self, callee: &Expr, _: &Token, args: &[Expr]) -> VisitorResult<Literal> {
         self.resolve_expr(callee)?;
         for arg in args {
             self.resolve_expr(arg)?;
         }
         Ok(Literal::Nil)
     }
-    fn visit_grouping(&mut self, expr: &mut Expr) -> VisitorResult<Literal> {
+    fn visit_grouping(&mut self, expr: &Expr) -> VisitorResult<Literal> {
         self.resolve_expr(expr)?;
         Ok(Literal::Nil)
     }
     fn visit_literal(&mut self, _literal: &Literal) -> VisitorResult<Literal> {
         Ok(Literal::Nil)
     }
-    fn visit_logical(
-        &mut self,
-        left: &mut Expr,
-        _: &Token,
-        right: &mut Expr,
-    ) -> VisitorResult<Literal> {
+    fn visit_logical(&mut self, left: &Expr, _: &Token, right: &Expr) -> VisitorResult<Literal> {
         self.resolve_expr(left)?;
         self.resolve_expr(right)?;
         Ok(Literal::Nil)
     }
-    fn visit_unary(&mut self, _: &Token, expr: &mut Expr) -> VisitorResult<Literal> {
+    fn visit_unary(&mut self, _: &Token, expr: &Expr) -> VisitorResult<Literal> {
         self.resolve_expr(expr)?;
         Ok(Literal::Nil)
     }
-    fn visit_variable(&mut self, variable: &mut Variable) -> VisitorResult<Literal> {
+    fn visit_variable(&mut self, variable: &Variable) -> VisitorResult<Literal> {
         if !self.scopes.is_empty()
             && self
                 .scopes
@@ -207,6 +197,6 @@ impl ExprVisitor for Resolver {
 
 pub trait Resolvable {
     fn name(&self) -> &Token;
-    fn set_dist(&mut self, dist: usize);
+    fn set_dist(&self, dist: usize);
     fn get_dist(&self) -> Option<usize>;
 }
