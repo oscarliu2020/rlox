@@ -126,7 +126,7 @@ impl Envt for Environment {
     }
     fn get_at(&self, distance: usize, name: &Token) -> Result<Literal, VisitorError> {
         self.ancestor(distance).map_or_else(
-            |e_| Err(EnvironmentError::InvalidEnvironmentDistance.into()),
+            |_| Err(EnvironmentError::InvalidEnvironmentDistance.into()),
             |env| env.get(name),
         )
     }

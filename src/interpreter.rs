@@ -5,10 +5,6 @@ use crate::resolver::Resolvable;
 use crate::syntax::ast::{Assign, Expr, ExprVisitor, FnStmt, Stmt, StmtVisitor, Variable};
 use crate::syntax::token::{Func, Function, Literal, NativeFunc, Token, TokenType};
 use std::{cell::RefCell, rc::Rc};
-fn error(t: &Token, msg: &str) {
-    println!("[Runtime Error]line {}: {} ** {msg}", t.line, t.lexeme);
-}
-
 pub struct Interpreter {
     global: EnvironmentRef,
     environment: EnvironmentRef,

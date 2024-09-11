@@ -14,7 +14,7 @@ pub fn run(content: &str, interpreter: &mut Interpreter) {
         eprintln!("Error parsing");
         return;
     }
-    let mut resolver = Resolver::new(interpreter);
+    let mut resolver = Resolver::new();
     resolver.resolve(stmts.as_mut().unwrap()).unwrap();
     interpreter.interpret(stmts.as_mut().unwrap());
 }

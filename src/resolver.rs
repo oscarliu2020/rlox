@@ -1,8 +1,6 @@
-use super::interpreter::Interpreter;
 use super::syntax::{ast::*, token::*};
 use rustc_hash::FxHashMap;
-pub struct Resolver<'a> {
-    interpreter: &'a mut Interpreter,
+pub struct Resolver {
     scopes: Vec<FxHashMap<String, bool>>,
 }
 use thiserror::Error;
@@ -13,12 +11,9 @@ pub enum ResolverError {
     #[error("Already a variable with this name in this scope.")]
     AlreadyDeclared(Token),
 }
-impl<'a> Resolver<'a> {
-    pub fn new(interpreter: &'a mut Interpreter) -> Self {
-        Resolver {
-            interpreter,
-            scopes: vec![],
-        }
+impl Resolver {
+    pub fn new() -> Self {
+        Resolver { scopes: vec![] }
     }
     pub fn resolve(&mut self, stmts: &mut [Stmt]) -> VisitorResult<()> {
         for stmt in stmts {
@@ -77,7 +72,7 @@ impl<'a> Resolver<'a> {
         Ok(())
     }
 }
-impl StmtVisitor for Resolver<'_> {
+impl StmtVisitor for Resolver {
     fn visit_block(&mut self, stmts: &mut [Stmt]) -> VisitorResult<()> {
         self.begin_scope();
         self.resolve(stmts)?;
@@ -136,18 +131,13 @@ impl StmtVisitor for Resolver<'_> {
         Ok(())
     }
 }
-impl ExprVisitor for Resolver<'_> {
+impl ExprVisitor for Resolver {
     fn visit_assign(&mut self, assign: &mut Assign) -> VisitorResult<Literal> {
         self.resolve_expr(&mut assign.value)?;
         self.resolve_local(assign)?;
         Ok(Literal::Nil)
     }
-    fn visit_binary(
-        &mut self,
-        token: &Token,
-        e1: &mut Expr,
-        e2: &mut Expr,
-    ) -> VisitorResult<Literal> {
+    fn visit_binary(&mut self, _: &Token, e1: &mut Expr, e2: &mut Expr) -> VisitorResult<Literal> {
         self.resolve_expr(e1)?;
         self.resolve_expr(e2)?;
         Ok(Literal::Nil)
@@ -174,14 +164,14 @@ impl ExprVisitor for Resolver<'_> {
     fn visit_logical(
         &mut self,
         left: &mut Expr,
-        token: &Token,
+        _: &Token,
         right: &mut Expr,
     ) -> VisitorResult<Literal> {
         self.resolve_expr(left)?;
         self.resolve_expr(right)?;
         Ok(Literal::Nil)
     }
-    fn visit_unary(&mut self, token: &Token, expr: &mut Expr) -> VisitorResult<Literal> {
+    fn visit_unary(&mut self, _: &Token, expr: &mut Expr) -> VisitorResult<Literal> {
         self.resolve_expr(expr)?;
         Ok(Literal::Nil)
     }
