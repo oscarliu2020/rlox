@@ -11,6 +11,12 @@ pub enum ResolverError {
     #[error("Already a variable with this name in this scope.")]
     AlreadyDeclared(Token),
 }
+impl Default for Resolver {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Resolver {
     pub fn new() -> Self {
         Resolver { scopes: vec![] }
