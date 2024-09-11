@@ -107,11 +107,14 @@ impl Interpreter {
         Ok(())
     }
     fn look_up_variable(&self, variable: &impl Resolvable) -> VisitorResult<Literal> {
-        variable
-            .get_dist()
-            .map_or(self.global.get(variable.name()), |dist| {
-                self.environment.get_at(dist, variable.name())
-            })
+        variable.get_dist().map_or(
+            self.global.get(variable.name()).map_err(|e| e.into()),
+            |dist| {
+                self.environment
+                    .get_at(dist, variable.name())
+                    .map_err(|e| e.into())
+            },
+        )
     }
 }
 impl StmtVisitor for Interpreter {
@@ -280,10 +283,15 @@ impl ExprVisitor for Interpreter {
         assign
             .get_dist()
             .map_or_else(
-                || self.global.assign(assign.name(), value.clone()),
+                || {
+                    self.global
+                        .assign(assign.name(), value.clone())
+                        .map_err(|e| e.into())
+                },
                 |dist| {
                     self.environment
                         .assign_at(dist, assign.name(), value.clone())
+                        .map_err(|e| e.into())
                 },
             )
             .map(|_| value)
