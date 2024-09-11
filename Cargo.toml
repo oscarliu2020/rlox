@@ -16,4 +16,6 @@ name = "bench1"
 harness = false
 [profile.release]
 panic="abort"
+lto=true
+[profile.bench]
 debug = true
