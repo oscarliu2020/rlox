@@ -43,7 +43,6 @@ impl RloxCallable for Function {
         match self {
             Function::Function(func) => func.params().len(),
             Function::Native(native) => native.arity,
-            Function::None => unreachable!(),
         }
     }
     fn call(self, interpreter: &mut Interpreter, args: Vec<Literal>) -> VisitorResult<Literal> {
@@ -61,7 +60,6 @@ impl RloxCallable for Function {
                 // todo!()
             }
             Function::Native(native) => Ok((native.func)()),
-            Function::None => unreachable!(),
         }
     }
 }
@@ -538,6 +536,7 @@ counter(); // "2".
         );
     }
     #[test]
+    #[should_panic]
     fn test_invalid_ret() {
         let mut interpreter = Interpreter::default();
         run(

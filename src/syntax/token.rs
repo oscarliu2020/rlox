@@ -101,7 +101,6 @@ pub struct NativeFunc {
 }
 #[derive(Clone, PartialEq)]
 pub enum Function {
-    None,
     Function(Func), //0:parameters,1:body
     Native(NativeFunc),
 }
@@ -113,9 +112,6 @@ impl Function {
             }
             Function::Native(native) => {
                 write!(f, "native function {}", native.name)
-            }
-            Function::None => {
-                write!(f, "none")
             }
         }
     }

@@ -2,6 +2,7 @@ use super::syntax::{ast::*, token::*};
 use rustc_hash::FxHashMap;
 pub struct Resolver {
     scopes: Vec<FxHashMap<String, bool>>,
+    cur_func: FunctionType,
 }
 use thiserror::Error;
 #[derive(Error, Debug)]
@@ -10,16 +11,25 @@ pub enum ResolverError {
     NotInitialized(Token),
     #[error("Already a variable with this name in this scope.")]
     AlreadyDeclared(Token),
+    #[error("Can't return from top-level code.")]
+    ReturnFromTopLevel,
 }
 impl Default for Resolver {
     fn default() -> Self {
         Self::new()
     }
 }
-
+#[derive(Clone, Copy, PartialEq)]
+enum FunctionType {
+    None,
+    Function,
+}
 impl Resolver {
     pub fn new() -> Self {
-        Resolver { scopes: vec![] }
+        Resolver {
+            scopes: vec![],
+            cur_func: FunctionType::None,
+        }
     }
     pub fn resolve(&mut self, stmts: &[Stmt]) -> VisitorResult<()> {
         for stmt in stmts {
@@ -75,7 +85,10 @@ impl Resolver {
         _: &Token,
         params: &[Token],
         body: &[Stmt],
+        ftype: FunctionType,
     ) -> VisitorResult<()> {
+        let prev = self.cur_func;
+        self.cur_func = ftype;
         self.begin_scope();
         for param in params {
             self.declare(param)?;
@@ -83,6 +96,7 @@ impl Resolver {
         }
         self.resolve(body)?;
         self.end_scope();
+        self.cur_func = prev;
         Ok(())
     }
 }
@@ -104,7 +118,7 @@ impl StmtVisitor for Resolver {
     ) -> VisitorResult<()> {
         self.declare(name)?;
         self.define(name);
-        self.resolve_function(name, params, body)
+        self.resolve_function(name, params, body, FunctionType::Function)
     }
     fn visit_if(&mut self, cond: &Expr, body: &(Stmt, Option<Stmt>)) -> VisitorResult<()> {
         self.resolve_expr(cond)?;
@@ -122,6 +136,9 @@ impl StmtVisitor for Resolver {
         _: &crate::syntax::token::Token,
         expr: Option<&Expr>,
     ) -> VisitorResult<()> {
+        if self.cur_func == FunctionType::None {
+            return Err(ResolverError::ReturnFromTopLevel.into());
+        }
         if let Some(expr) = expr {
             self.resolve_expr(expr)?;
         }
