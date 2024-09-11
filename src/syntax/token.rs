@@ -1,7 +1,4 @@
-use std::{
-    fmt::{self, Display},
-    rc::Rc,
-};
+use std::fmt::{self};
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenType {
