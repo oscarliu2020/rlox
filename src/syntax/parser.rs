@@ -1,5 +1,6 @@
 use super::ast::{self, Assign, FnStmt, Variable};
 use super::token::{Literal, Token, TokenType};
+use std::rc::Rc;
 pub struct Parser<'a> {
     tokens: &'a [Token],
     current: usize,
@@ -115,7 +116,7 @@ impl<'a> Parser<'a> {
         if match_token!(self, [TokenType::LEFT_PAREN]) {
             let expr = self.expression()?;
             self.consume(TokenType::RIGHT_PAREN, "ecpected ')' after expression")?;
-            return Ok(ast::Expr::Grouping(Box::new(expr)));
+            return Ok(ast::Expr::Grouping(Rc::new(expr)));
         }
         if match_token!(self, [TokenType::IDENTIFIER]) {
             return Ok(ast::Expr::Variable(Variable::new(self.previous().clone())));
@@ -139,7 +140,7 @@ impl<'a> Parser<'a> {
             }
         }
         let paren = self.consume(TokenType::RIGHT_PAREN, "expected ')' after arguments")?;
-        Ok(ast::Expr::Call(Box::new(callee), paren, args))
+        Ok(ast::Expr::Call(Rc::new(callee), paren, args.into()))
     }
     fn call(&mut self) -> Result<ast::Expr, ParserError> {
         let mut expr = self.primary()?;
@@ -156,7 +157,7 @@ impl<'a> Parser<'a> {
         if match_token!(self, [TokenType::BANG, TokenType::MINUS]) {
             let operator = self.previous().clone();
             let right = self.unary()?;
-            return Ok(ast::Expr::Unary(operator, Box::new(right)));
+            return Ok(ast::Expr::Unary(operator, Rc::new(right)));
         }
         self.call()
     }
@@ -165,7 +166,7 @@ impl<'a> Parser<'a> {
         while match_token!(self, [TokenType::SLASH, TokenType::STAR]) {
             let operator = self.previous().clone();
             let right = self.unary()?;
-            expr = ast::Expr::Binary(Box::new(expr), operator, Box::new(right));
+            expr = ast::Expr::Binary(Rc::new(expr), operator, Rc::new(right));
         }
         Ok(expr)
     }
@@ -174,7 +175,7 @@ impl<'a> Parser<'a> {
         while match_token!(self, [TokenType::PLUS, TokenType::MINUS]) {
             let operator = self.previous().clone();
             let right = self.factor()?;
-            expr = ast::Expr::Binary(Box::new(expr), operator, Box::new(right));
+            expr = ast::Expr::Binary(Rc::new(expr), operator, Rc::new(right));
         }
         Ok(expr)
     }
@@ -191,7 +192,7 @@ impl<'a> Parser<'a> {
         ) {
             let operator = self.previous().clone();
             let right = self.term()?;
-            expr = ast::Expr::Binary(Box::new(expr), operator, Box::new(right));
+            expr = ast::Expr::Binary(Rc::new(expr), operator, Rc::new(right));
         }
         Ok(expr)
     }
@@ -200,7 +201,7 @@ impl<'a> Parser<'a> {
         while match_token!(self, [TokenType::BANG_EQUAL, TokenType::EQUAL_EQUAL]) {
             let operator = self.previous().clone();
             let right = self.comparison()?;
-            expr = ast::Expr::Binary(Box::new(expr), operator, Box::new(right));
+            expr = ast::Expr::Binary(Rc::new(expr), operator, Rc::new(right));
         }
         Ok(expr)
     }
@@ -209,7 +210,7 @@ impl<'a> Parser<'a> {
         while match_token!(self, [TokenType::AND]) {
             let operator = self.previous().clone();
             let right = self.equality()?;
-            expr = ast::Expr::Logical(Box::new(expr), operator, Box::new(right));
+            expr = ast::Expr::Logical(Rc::new(expr), operator, Rc::new(right));
         }
         Ok(expr)
     }
@@ -218,7 +219,7 @@ impl<'a> Parser<'a> {
         while match_token!(self, [TokenType::OR]) {
             let operator = self.previous().clone();
             let right = self.and()?;
-            expr = ast::Expr::Logical(Box::new(expr), operator, Box::new(right));
+            expr = ast::Expr::Logical(Rc::new(expr), operator, Rc::new(right));
         }
         Ok(expr)
     }
@@ -229,7 +230,7 @@ impl<'a> Parser<'a> {
             let value = self.assignment()?;
             match expr {
                 ast::Expr::Variable(name) => {
-                    return Ok(ast::Expr::Assign(Assign::new(name.name, Box::new(value))));
+                    return Ok(ast::Expr::Assign(Assign::new(name.name, Rc::new(value))));
                 }
                 _ => {
                     self.error(&equals, "Invalid assignment target");
@@ -262,10 +263,10 @@ impl<'a> Parser<'a> {
             let else_stmt = self.statement()?;
             Ok(ast::Stmt::IfStmt(
                 cond,
-                Box::new((then_stmt, Some(else_stmt))),
+                Rc::new((then_stmt, Some(else_stmt))),
             ))
         } else {
-            Ok(ast::Stmt::IfStmt(cond, Box::new((then_stmt, None))))
+            Ok(ast::Stmt::IfStmt(cond, Rc::new((then_stmt, None))))
         }
     }
     fn while_statement(&mut self) -> Result<ast::Stmt, ParserError> {
@@ -273,7 +274,7 @@ impl<'a> Parser<'a> {
         let cond = self.expression()?;
         self.consume(TokenType::RIGHT_PAREN, "expected ')' after condition")?;
         let body = self.statement()?;
-        Ok(ast::Stmt::WhileStmt(cond, Box::new(body)))
+        Ok(ast::Stmt::WhileStmt(cond, Rc::new(body)))
     }
     fn for_statement(&mut self) -> Result<ast::Stmt, ParserError> {
         self.consume(TokenType::LEFT_PAREN, "expected '(' after 'for'")?;
@@ -303,7 +304,7 @@ impl<'a> Parser<'a> {
             ast::Stmt::Block(vec![body])
         };
 
-        block = ast::Stmt::WhileStmt(cond, Box::new(block));
+        block = ast::Stmt::WhileStmt(cond, Rc::new(block));
 
         block = if let Some(initializer) = initializer {
             ast::Stmt::Block(vec![initializer, block])
@@ -384,7 +385,11 @@ impl<'a> Parser<'a> {
             &format!("expected '{{' before {} body", kind),
         )?;
         let body = self.block()?;
-        Ok(ast::Stmt::Function(FnStmt::new(name.clone(), params, body)))
+        Ok(ast::Stmt::Function(FnStmt::new(
+            name.clone(),
+            params.into(),
+            body.into(),
+        )))
     }
     fn declaration(&mut self) -> Option<ast::Stmt> {
         // let res = if match_token!(self, [TokenType::VAR]) {

@@ -1,6 +1,7 @@
 use super::super::{environment::EnvironmentError, resolver::ResolverError};
 use super::ast::*;
 use super::token::{Literal, Token};
+use std::rc::Rc;
 use thiserror::Error;
 #[derive(Error, Debug)]
 pub enum VisitorError {
@@ -52,8 +53,8 @@ pub trait StmtVisitor {
     fn visit_function(
         &mut self,
         name: &Token,
-        params: &[Token],
-        body: &[Stmt],
+        params: Rc<[Token]>,
+        body: Rc<[Stmt]>,
     ) -> VisitorResult<()>;
     fn visit_return(&mut self, token: &Token, expr: Option<&Expr>) -> VisitorResult<()>;
 }

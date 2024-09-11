@@ -1,17 +1,18 @@
 use super::token::{Literal, Token};
 use std::cell::Cell;
 use std::fmt::{Display, Formatter};
+use std::rc::Rc;
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Assign(Assign),
-    Binary(Box<Expr>, Token, Box<Expr>),
-    Grouping(Box<Expr>),
+    Binary(Rc<Expr>, Token, Rc<Expr>),
+    Grouping(Rc<Expr>),
     Literal(Literal),
-    Unary(Token, Box<Expr>),
+    Unary(Token, Rc<Expr>),
     Variable(Variable),
-    Logical(Box<Expr>, Token, Box<Expr>),
-    Call(Box<Expr>, Token, Vec<Expr>),
+    Logical(Rc<Expr>, Token, Rc<Expr>),
+    Call(Rc<Expr>, Token, Rc<[Expr]>),
 }
 impl Display for Expr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -39,7 +40,7 @@ impl Display for Expr {
             }
             Expr::Call(callee, _, args) => {
                 write!(f, "{}(", callee)?;
-                for arg in args {
+                for arg in args.iter() {
                     write!(f, "{},", arg)?;
                 }
                 write!(f, ")")
@@ -54,19 +55,19 @@ pub enum Stmt {
     Print(Expr),
     Var(Token, Option<Expr>),
     Block(Vec<Stmt>),
-    IfStmt(Expr, Box<(Stmt, Option<Stmt>)>),
-    WhileStmt(Expr, Box<Stmt>),
+    IfStmt(Expr, Rc<(Stmt, Option<Stmt>)>),
+    WhileStmt(Expr, Rc<Stmt>),
     Function(FnStmt), // name, params, body
     Return(Token, Option<Expr>),
 }
 #[derive(Clone, PartialEq, Debug)]
 pub struct FnStmt {
     pub name: Token,
-    pub params: Vec<Token>,
-    pub body: Vec<Stmt>,
+    pub params: Rc<[Token]>,
+    pub body: Rc<[Stmt]>,
 }
 impl FnStmt {
-    pub fn new(name: Token, params: Vec<Token>, body: Vec<Stmt>) -> Self {
+    pub fn new(name: Token, params: Rc<[Token]>, body: Rc<[Stmt]>) -> Self {
         Self { name, params, body }
     }
 }
@@ -91,7 +92,7 @@ impl Variable {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Assign {
     pub name: Token,
-    pub value: Box<Expr>,
+    pub value: Rc<Expr>,
     pub dist: Cell<Option<usize>>,
 }
 impl Display for Assign {
@@ -100,7 +101,7 @@ impl Display for Assign {
     }
 }
 impl Assign {
-    pub fn new(name: Token, value: Box<Expr>) -> Self {
+    pub fn new(name: Token, value: Rc<Expr>) -> Self {
         Self {
             name,
             value,
@@ -119,7 +120,7 @@ impl Stmt {
             Stmt::IfStmt(cond, body) => visitor.visit_if(cond, body),
             Stmt::WhileStmt(cond, body) => visitor.visit_while(cond, body),
             Stmt::Function(FnStmt { name, params, body }) => {
-                visitor.visit_function(name, params, body)
+                visitor.visit_function(name, Rc::clone(params), Rc::clone(body))
             }
             Stmt::Return(token, expr) => visitor.visit_return(token, expr.as_ref()),
         }

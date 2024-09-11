@@ -1,5 +1,6 @@
 use super::syntax::{ast::*, token::*};
 use rustc_hash::FxHashMap;
+use std::rc::Rc;
 pub struct Resolver {
     scopes: Vec<FxHashMap<String, bool>>,
     cur_func: FunctionType,
@@ -83,18 +84,18 @@ impl Resolver {
     fn resolve_function(
         &mut self,
         _: &Token,
-        params: &[Token],
-        body: &[Stmt],
+        params: Rc<[Token]>,
+        body: Rc<[Stmt]>,
         ftype: FunctionType,
     ) -> VisitorResult<()> {
         let prev = self.cur_func;
         self.cur_func = ftype;
         self.begin_scope();
-        for param in params {
+        for param in params.iter() {
             self.declare(param)?;
             self.define(param);
         }
-        self.resolve(body)?;
+        self.resolve(&body)?;
         self.end_scope();
         self.cur_func = prev;
         Ok(())
@@ -113,12 +114,17 @@ impl StmtVisitor for Resolver {
     fn visit_function(
         &mut self,
         name: &crate::syntax::token::Token,
-        params: &[crate::syntax::token::Token],
-        body: &[Stmt],
+        params: Rc<[crate::syntax::token::Token]>,
+        body: Rc<[Stmt]>,
     ) -> VisitorResult<()> {
         self.declare(name)?;
         self.define(name);
-        self.resolve_function(name, params, body, FunctionType::Function)
+        self.resolve_function(
+            name,
+            Rc::clone(&params),
+            Rc::clone(&body),
+            FunctionType::Function,
+        )
     }
     fn visit_if(&mut self, cond: &Expr, body: &(Stmt, Option<Stmt>)) -> VisitorResult<()> {
         self.resolve_expr(cond)?;

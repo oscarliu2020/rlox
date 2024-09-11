@@ -158,14 +158,14 @@ impl StmtVisitor for Interpreter {
     fn visit_function(
         &mut self,
         name: &Token,
-        params: &[Token],
-        body: &[Stmt],
+        params: Rc<[Token]>,
+        body: Rc<[Stmt]>,
     ) -> VisitorResult<()> {
         let new_func = Function::Function(Func {
             decl: Rc::new(FnStmt {
                 name: name.clone(),
-                params: params.to_vec(),
-                body: body.to_vec(),
+                params,
+                body,
             }),
             closure: Rc::clone(&self.environment),
         });
