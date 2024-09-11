@@ -48,12 +48,20 @@ impl Resolver {
     fn end_scope(&mut self) {
         self.scopes.pop();
     }
-    fn declare(&mut self, name: &Token) {
+    fn declare(&mut self, name: &Token) -> Result<(), ResolverError> {
         if self.scopes.is_empty() {
-            return;
+            return Ok(());
         }
         let scope = self.scopes.last_mut().unwrap();
-        scope.insert(name.lexeme.clone(), false);
+        match scope.entry(name.lexeme.clone()) {
+            std::collections::hash_map::Entry::Occupied(_) => {
+                return Err(ResolverError::AlreadyDeclared(name.clone()));
+            }
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(false);
+            }
+        }
+        Ok(())
     }
     fn define(&mut self, name: &Token) {
         if self.scopes.is_empty() {
@@ -70,7 +78,7 @@ impl Resolver {
     ) -> VisitorResult<()> {
         self.begin_scope();
         for param in params {
-            self.declare(param);
+            self.declare(param)?;
             self.define(param);
         }
         self.resolve(body)?;
@@ -94,7 +102,7 @@ impl StmtVisitor for Resolver {
         params: &[crate::syntax::token::Token],
         body: &mut [Stmt],
     ) -> VisitorResult<()> {
-        self.declare(name);
+        self.declare(name)?;
         self.define(name);
         self.resolve_function(name, params, body)
     }
@@ -124,7 +132,7 @@ impl StmtVisitor for Resolver {
         token: &crate::syntax::token::Token,
         expr: Option<&mut Expr>,
     ) -> VisitorResult<()> {
-        self.declare(token);
+        self.declare(token)?;
         if let Some(expr) = expr {
             self.resolve_expr(expr)?;
         }

@@ -525,4 +525,19 @@ counter(); // "2".
             &mut interpreter,
         );
     }
+
+    #[test]
+    #[should_panic]
+    fn test_decl() {
+        let mut interpreter = Interpreter::default();
+        run(
+            r#"
+            fun foo() {
+                var a=1;
+                var a=2;
+            }
+        "#,
+            &mut interpreter,
+        );
+    }
 }
