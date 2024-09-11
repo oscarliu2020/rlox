@@ -345,7 +345,7 @@ impl ExprVisitor for Interpreter {
                         .assign_at(dist, assign.name(), value.clone())
                 },
             )
-            .map(|_| Literal::Nil)
+            .map(|_| value)
         // todo!()
     }
 }
