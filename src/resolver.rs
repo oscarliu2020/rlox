@@ -221,6 +221,10 @@ impl ExprVisitor for Resolver {
         self.resolve_local(variable)?;
         Ok(Literal::Nil)
     }
+    fn visit_get(&mut self, get: &Get) -> VisitorResult<Literal> {
+        self.resolve_expr(&get.object)?;
+        Ok(Literal::Nil)
+    }
 }
 
 pub trait Resolvable {

@@ -1,4 +1,4 @@
-use super::ast::{self, Assign, FnStmt, Variable};
+use super::ast::{self, Assign, FnStmt, Get, Variable};
 use super::token::{Literal, Token, TokenType};
 use std::rc::Rc;
 pub struct Parser<'a> {
@@ -147,6 +147,10 @@ impl<'a> Parser<'a> {
         loop {
             if match_token!(self, [TokenType::LEFT_PAREN]) {
                 expr = self.finish_call(expr)?;
+            } else if match_token!(self, TokenType::DOT) {
+                let name =
+                    self.consume(TokenType::IDENTIFIER, "expected property name after '.'")?;
+                expr = ast::Expr::Get(Get::new(Rc::new(expr), name.clone()));
             } else {
                 break;
             }

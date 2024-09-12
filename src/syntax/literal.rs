@@ -1,3 +1,5 @@
+use rustc_hash::FxHashMap;
+
 use super::ast::{FnStmt, Stmt};
 use super::token::Token;
 use crate::environment::EnvironmentRef;
@@ -81,6 +83,8 @@ pub enum Literal {
     Boolean(bool),
     Callable(Function),
     Nil,
+    Class(Class),
+    Instance(Instance),
 }
 impl Display for Literal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -90,6 +94,8 @@ impl Display for Literal {
             Literal::Number(n) => write!(f, "{:.}", *n),
             Literal::String(s) => write!(f, "{}", s),
             Literal::Callable(ff) => write!(f, "{}", ff),
+            Literal::Class(c) => write!(f, "{}", c),
+            Literal::Instance(i) => write!(f, "{}", i),
         }
     }
 }
@@ -102,6 +108,7 @@ impl Literal {
         }
     }
 }
+#[derive(Debug, Clone, PartialEq)]
 pub struct Class {
     name: String,
 }
@@ -113,5 +120,26 @@ impl Class {
 impl Display for Class {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.name)
+    }
+}
+#[derive(Debug, Clone, PartialEq)]
+pub struct Instance {
+    pub class: Class,
+    fields: FxHashMap<String, Literal>,
+}
+impl Instance {
+    pub fn new(class: Class) -> Self {
+        Self {
+            class,
+            fields: FxHashMap::default(),
+        }
+    }
+    pub fn get(&self, name: &str) -> Option<Literal> {
+        self.fields.get(name).cloned()
+    }
+}
+impl Display for Instance {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} instance", self.class)
     }
 }

@@ -13,6 +13,7 @@ pub enum Expr {
     Variable(Variable),
     Logical(Rc<Expr>, Token, Rc<Expr>),
     Call(Rc<Expr>, Token, Rc<[Expr]>),
+    Get(Get),
 }
 impl Display for Expr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -44,6 +45,9 @@ impl Display for Expr {
                     write!(f, "{},", arg)?;
                 }
                 write!(f, ")")
+            }
+            Expr::Get(get) => {
+                write!(f, "{}", get)
             }
         }
     }
@@ -121,6 +125,21 @@ impl Assign {
     }
 }
 #[derive(Debug, PartialEq)]
+pub struct Get {
+    pub object: Rc<Expr>,
+    pub name: Token,
+}
+impl Display for Get {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}.{}", self.object, self.name.lexeme)
+    }
+}
+impl Get {
+    pub fn new(object: Rc<Expr>, name: Token) -> Self {
+        Self { object, name }
+    }
+}
+#[derive(Debug, PartialEq)]
 pub struct ClassStmt {
     pub name: Token,
     pub methods: Rc<[FnStmt]>,
@@ -169,6 +188,7 @@ impl Expr {
             Expr::Assign(assign) => visitor.visit_assign(assign),
             Expr::Logical(left, token, right) => visitor.visit_logical(left, token, right),
             Expr::Call(callee, paren, args) => visitor.visit_call(callee, paren, args),
+            Expr::Get(get) => visitor.visit_get(get),
         }
     }
 }
