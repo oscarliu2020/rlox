@@ -3,6 +3,7 @@ use rustc_hash::FxHashMap;
 use super::ast::{FnStmt, Stmt};
 use super::token::Token;
 use crate::environment::EnvironmentRef;
+use std::cell::RefCell;
 use std::fmt::{self, Display};
 use std::rc::Rc;
 #[derive(Clone)]
@@ -84,7 +85,7 @@ pub enum Literal {
     Callable(Function),
     Nil,
     Class(Class),
-    Instance(Instance),
+    Instance(Rc<RefCell<Instance>>),
 }
 impl Display for Literal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -95,7 +96,7 @@ impl Display for Literal {
             Literal::String(s) => write!(f, "{}", s),
             Literal::Callable(ff) => write!(f, "{}", ff),
             Literal::Class(c) => write!(f, "{}", c),
-            Literal::Instance(i) => write!(f, "{}", i),
+            Literal::Instance(i) => write!(f, "{}", i.borrow()),
         }
     }
 }
@@ -136,6 +137,9 @@ impl Instance {
     }
     pub fn get(&self, name: &str) -> Option<Literal> {
         self.fields.get(name).cloned()
+    }
+    pub fn set(&mut self, name: &str, value: Literal) {
+        self.fields.insert(name.to_string(), value);
     }
 }
 impl Display for Instance {

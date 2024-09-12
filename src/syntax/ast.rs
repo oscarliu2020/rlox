@@ -14,6 +14,7 @@ pub enum Expr {
     Logical(Rc<Expr>, Token, Rc<Expr>),
     Call(Rc<Expr>, Token, Rc<[Expr]>),
     Get(Get),
+    Set(Set),
 }
 impl Display for Expr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -48,6 +49,9 @@ impl Display for Expr {
             }
             Expr::Get(get) => {
                 write!(f, "{}", get)
+            }
+            Expr::Set(set) => {
+                write!(f, "{}", set)
             }
         }
     }
@@ -158,6 +162,33 @@ impl ClassStmt {
         Self { name, methods }
     }
 }
+#[derive(Debug, PartialEq)]
+pub struct Set {
+    pub object: Rc<Expr>,
+    pub name: Token,
+    pub value: Rc<Expr>,
+}
+impl Display for Set {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}.{} = {}", self.object, self.name.lexeme, self.value)
+    }
+}
+impl Set {
+    pub fn new(object: Rc<Expr>, name: Token, value: Rc<Expr>) -> Self {
+        Self {
+            object,
+            name,
+            value,
+        }
+    }
+    pub fn from_get(get: Get, value: Rc<Expr>) -> Self {
+        Self {
+            object: get.object,
+            name: get.name,
+            value,
+        }
+    }
+}
 
 pub use super::visitor::*;
 impl Stmt {
@@ -189,6 +220,7 @@ impl Expr {
             Expr::Logical(left, token, right) => visitor.visit_logical(left, token, right),
             Expr::Call(callee, paren, args) => visitor.visit_call(callee, paren, args),
             Expr::Get(get) => visitor.visit_get(get),
+            Expr::Set(set) => visitor.visitor_set(set),
         }
     }
 }

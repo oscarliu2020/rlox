@@ -1,4 +1,4 @@
-use super::ast::{self, Assign, FnStmt, Get, Variable};
+use super::ast::{self, Assign, FnStmt, Get, Set, Variable};
 use super::token::{Literal, Token, TokenType};
 use std::rc::Rc;
 pub struct Parser<'a> {
@@ -235,6 +235,9 @@ impl<'a> Parser<'a> {
             match expr {
                 ast::Expr::Variable(name) => {
                     return Ok(ast::Expr::Assign(Assign::new(name.name, Rc::new(value))));
+                }
+                ast::Expr::Get(get) => {
+                    return Ok(ast::Expr::Set(Set::from_get(get, Rc::new(value))));
                 }
                 _ => {
                     self.error(&equals, "Invalid assignment target");

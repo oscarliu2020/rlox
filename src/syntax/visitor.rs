@@ -45,6 +45,7 @@ pub trait ExprVisitor {
     fn visit_call(&mut self, callee: &Expr, paren: &Token, args: &[Expr])
         -> VisitorResult<Literal>;
     fn visit_get(&mut self, get: &Get) -> VisitorResult<Literal>;
+    fn visitor_set(&mut self, set: &Set) -> VisitorResult<Literal>;
 }
 pub trait StmtVisitor {
     fn visit_while(&mut self, cond: &Expr, body: &Stmt) -> VisitorResult<()>;

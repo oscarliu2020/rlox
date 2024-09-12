@@ -6,7 +6,8 @@ use crate::syntax::ast::{Assign, Expr, ExprVisitor, FnStmt, Stmt, StmtVisitor, V
 use crate::syntax::token::{
     Class, Func, Function, Instance, Literal, NativeFunc, Token, TokenType,
 };
-use std::{cell::RefCell, rc::Rc};
+use std::cell::RefCell;
+use std::rc::Rc;
 pub struct Interpreter {
     global: EnvironmentRef,
     environment: EnvironmentRef,
@@ -123,7 +124,7 @@ impl RloxCallable for Class {
         0
     }
     fn call(self, _: &mut Interpreter, _: Vec<Literal>) -> VisitorResult<Literal> {
-        let instance = Literal::Instance(Instance::new(self));
+        let instance = Literal::Instance(Rc::new(RefCell::new(Instance::new(self))));
         Ok(instance)
     }
 }
@@ -187,9 +188,7 @@ impl StmtVisitor for Interpreter {
         } else {
             Literal::Nil
         };
-        self.environment
-            .borrow_mut()
-            .define(token.lexeme.clone(), value);
+        self.environment.define(token.lexeme.clone(), value);
         Ok(())
     }
     fn visit_while(&mut self, cond: &Expr, body: &Stmt) -> VisitorResult<()> {
@@ -367,9 +366,20 @@ impl ExprVisitor for Interpreter {
     fn visit_get(&mut self, get: &crate::syntax::ast::Get) -> VisitorResult<Literal> {
         let x = self.evaluate(&get.object)?;
         if let Literal::Instance(instance) = x {
-            instance.get(&get.name.lexeme).ok_or_else(|| {
+            instance.borrow().get(&get.name.lexeme).ok_or_else(|| {
                 VisitorError::UndefinedProperty(get.name.clone(), get.name.lexeme.clone())
             })
+        } else {
+            Err(VisitorError::VistorError)
+        }
+    }
+    fn visitor_set(&mut self, set: &crate::syntax::ast::Set) -> VisitorResult<Literal> {
+        let obj = self.evaluate(&set.object)?;
+        if let Literal::Instance(mut instance) = obj {
+            let value = self.evaluate(&set.value)?;
+            // instance.fields.insert(set.name.lexeme.clone(), value);
+            instance.borrow_mut().set(&set.name.lexeme, value.clone());
+            Ok(value)
         } else {
             Err(VisitorError::VistorError)
         }
