@@ -391,6 +391,22 @@ impl<'a> Parser<'a> {
             body.into(),
         )))
     }
+    fn class_declaration(&mut self) -> Result<ast::Stmt, ParserError> {
+        let name = self.consume(TokenType::IDENTIFIER, "Expect class name")?;
+        self.consume(TokenType::LEFT_BRACE, "Expect '{' before class body")?;
+        let mut methods = vec![];
+        while !self.check(&TokenType::RIGHT_BRACE) && !self.is_at_end() {
+            let ast::Stmt::Function(func) = self.function("method")? else {
+                unreachable!()
+            };
+            methods.push(func);
+        }
+        self.consume(TokenType::RIGHT_BRACE, "Expect '}' after class body")?;
+        Ok(ast::Stmt::Class(ast::ClassStmt::new(
+            name.clone(),
+            methods.into(),
+        )))
+    }
     fn declaration(&mut self) -> Option<ast::Stmt> {
         // let res = if match_token!(self, [TokenType::VAR]) {
         //     self.var_declaration()
@@ -405,6 +421,10 @@ impl<'a> Parser<'a> {
             TokenType::FUN => {
                 self.advance();
                 self.function("function")
+            }
+            TokenType::CLASS => {
+                self.advance();
+                self.class_declaration()
             }
             _ => self.statement(),
         };

@@ -57,4 +57,5 @@ pub trait StmtVisitor {
         body: Rc<[Stmt]>,
     ) -> VisitorResult<()>;
     fn visit_return(&mut self, token: &Token, expr: Option<&Expr>) -> VisitorResult<()>;
+    fn visit_class(&mut self, class: &ClassStmt) -> VisitorResult<()>;
 }

@@ -3,7 +3,7 @@ use std::cell::Cell;
 use std::fmt::{Display, Formatter};
 use std::rc::Rc;
 #[non_exhaustive]
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum Expr {
     Assign(Assign),
     Binary(Rc<Expr>, Token, Rc<Expr>),
@@ -48,7 +48,7 @@ impl Display for Expr {
         }
     }
 }
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq)]
 #[non_exhaustive]
 pub enum Stmt {
     Expression(Expr),
@@ -59,8 +59,9 @@ pub enum Stmt {
     WhileStmt(Expr, Rc<Stmt>),
     Function(FnStmt), // name, params, body
     Return(Token, Option<Expr>),
+    Class(ClassStmt),
 }
-#[derive(Clone, PartialEq, Debug)]
+#[derive(PartialEq, Debug)]
 pub struct FnStmt {
     pub name: Token,
     pub params: Rc<[Token]>,
@@ -71,7 +72,17 @@ impl FnStmt {
         Self { name, params, body }
     }
 }
-#[derive(Clone, PartialEq, Debug)]
+impl Display for FnStmt {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "fn {}(", self.name.lexeme)?;
+        for param in self.params.iter() {
+            write!(f, "{},", param.lexeme)?;
+        }
+        write!(f, ")")?;
+        Ok(())
+    }
+}
+#[derive(PartialEq, Debug)]
 pub struct Variable {
     pub name: Token,
     pub dist: Cell<Option<usize>>,
@@ -89,7 +100,7 @@ impl Variable {
         }
     }
 }
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct Assign {
     pub name: Token,
     pub value: Rc<Expr>,
@@ -109,6 +120,26 @@ impl Assign {
         }
     }
 }
+#[derive(Debug, PartialEq)]
+pub struct ClassStmt {
+    pub name: Token,
+    pub methods: Rc<[FnStmt]>,
+}
+impl Display for ClassStmt {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "class {}:", self.name.lexeme)?;
+        for method in self.methods.iter() {
+            write!(f, "\t{}", method)?;
+        }
+        Ok(())
+    }
+}
+impl ClassStmt {
+    pub fn new(name: Token, methods: Rc<[FnStmt]>) -> Self {
+        Self { name, methods }
+    }
+}
+
 pub use super::visitor::*;
 impl Stmt {
     pub fn accept(&self, visitor: &mut impl StmtVisitor) -> VisitorResult<()> {
@@ -123,6 +154,7 @@ impl Stmt {
                 visitor.visit_function(name, Rc::clone(params), Rc::clone(body))
             }
             Stmt::Return(token, expr) => visitor.visit_return(token, expr.as_ref()),
+            Stmt::Class(class) => visitor.visit_class(class),
         }
     }
 }

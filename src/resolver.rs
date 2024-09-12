@@ -167,6 +167,11 @@ impl StmtVisitor for Resolver {
         self.resolve_stmt(body)?;
         Ok(())
     }
+    fn visit_class(&mut self, class: &ClassStmt) -> VisitorResult<()> {
+        self.declare(&class.name)?;
+        self.define(&class.name);
+        Ok(())
+    }
 }
 impl ExprVisitor for Resolver {
     fn visit_assign(&mut self, assign: &Assign) -> VisitorResult<Literal> {

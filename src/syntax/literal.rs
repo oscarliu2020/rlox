@@ -102,3 +102,16 @@ impl Literal {
         }
     }
 }
+pub struct Class {
+    name: String,
+}
+impl Class {
+    pub fn new(name: String) -> Self {
+        Self { name }
+    }
+}
+impl Display for Class {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.name)
+    }
+}

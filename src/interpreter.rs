@@ -181,6 +181,10 @@ impl StmtVisitor for Interpreter {
         };
         Err(VisitorError::ReturnValue(value))
     }
+    fn visit_class(&mut self, class: &crate::syntax::ast::ClassStmt) -> VisitorResult<()> {
+        // self.environment.define()
+        todo!()
+    }
 }
 
 impl ExprVisitor for Interpreter {
