@@ -359,8 +359,6 @@ impl ExprVisitor for Interpreter {
         }
     }
     fn visit_variable(&mut self, variable: &Variable) -> VisitorResult<Literal> {
-        // self.environment.borrow().get(token)
-        // self.look_up_variable(token)
         self.look_up_variable(variable)
     }
     fn visit_get(&mut self, get: &crate::syntax::ast::Get) -> VisitorResult<Literal> {
@@ -375,9 +373,8 @@ impl ExprVisitor for Interpreter {
     }
     fn visitor_set(&mut self, set: &crate::syntax::ast::Set) -> VisitorResult<Literal> {
         let obj = self.evaluate(&set.object)?;
-        if let Literal::Instance(mut instance) = obj {
+        if let Literal::Instance(instance) = obj {
             let value = self.evaluate(&set.value)?;
-            // instance.fields.insert(set.name.lexeme.clone(), value);
             instance.borrow_mut().set(&set.name.lexeme, value.clone());
             Ok(value)
         } else {
