@@ -46,6 +46,7 @@ impl RloxCallable for Function {
         match self {
             Function::Function(func) => func.params().len(),
             Function::Native(native) => native.arity,
+            Function::Initializer(_) => 0,
         }
     }
     fn call(self, interpreter: &mut Interpreter, args: Vec<Literal>) -> VisitorResult<Literal> {
@@ -62,6 +63,10 @@ impl RloxCallable for Function {
                 }
             }
             Function::Native(native) => Ok((native.func)()),
+            Function::Initializer(class) => {
+                let instance = Literal::Instance(Rc::new(RefCell::new(Instance::new(class))));
+                Ok(instance)
+            }
         }
     }
 }
@@ -134,10 +139,25 @@ impl StmtVisitor for Interpreter {
         self.execute_block(stmts, block_env)
     }
     fn visit_class(&mut self, class: &crate::syntax::ast::ClassStmt) -> VisitorResult<()> {
-        self.environment.define(
+        // self.environment.define(
+        //     class.name.lexeme.clone(),
+        //     Literal::Class(Class::new(class.name.lexeme.clone())),
+        // );
+        self.environment
+            .define(class.name.lexeme.clone(), Literal::Nil);
+        let mut method_table = FxHashMap::default();
+        for method in class.methods.iter() {
+            let func = Function::Function(Func {
+                decl: Rc::new(method.clone()),
+                closure: Rc::clone(&self.environment),
+            });
+            method_table.insert(method.name.lexeme.clone(), Literal::Callable(func));
+        }
+        let klass = Literal::Callable(Function::Initializer(Class::new(
             class.name.lexeme.clone(),
-            Literal::Class(Class::new(class.name.lexeme.clone())),
-        );
+            method_table,
+        )));
+        self.environment.assign(&class.name, klass.clone())?;
         Ok(())
     }
     fn visit_expression(&mut self, expr: &Expr) -> VisitorResult<()> {
@@ -589,6 +609,36 @@ counter(); // "2".
             foo();
             return 2;
         "#,
+            &mut interpreter,
+        );
+    }
+    #[test]
+    fn test_class() {
+        let mut interpreter = Interpreter::default();
+        run(
+            r#"
+            class Foo {
+                bar() {
+                    print "bar";
+                }
+            }
+            fun out() {
+                print "out";
+            }
+            var foo = Foo();
+            foo.bar();
+            foo.a=1;
+            print foo.a;
+            foo.out=out;
+            foo.out();
+            class Bacon {
+                eat() {
+                    print "Crunch crunch crunch!";
+                }
+            }
+
+            Bacon().eat(); // Prints "Crunch crunch crunch!".
+            "#,
             &mut interpreter,
         );
     }

@@ -24,6 +24,7 @@ impl Default for Resolver {
 enum FunctionType {
     None,
     Function,
+    Method,
 }
 impl Resolver {
     pub fn new() -> Self {
@@ -170,6 +171,14 @@ impl StmtVisitor for Resolver {
     fn visit_class(&mut self, class: &ClassStmt) -> VisitorResult<()> {
         self.declare(&class.name)?;
         self.define(&class.name);
+        for method in class.methods.iter() {
+            self.resolve_function(
+                &method.name,
+                Rc::clone(&method.params),
+                Rc::clone(&method.body),
+                FunctionType::Method,
+            )?;
+        }
         Ok(())
     }
 }

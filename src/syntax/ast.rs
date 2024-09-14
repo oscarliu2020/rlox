@@ -69,7 +69,7 @@ pub enum Stmt {
     Return(Token, Option<Expr>),
     Class(ClassStmt),
 }
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct FnStmt {
     pub name: Token,
     pub params: Rc<[Token]>,

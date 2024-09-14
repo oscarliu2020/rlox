@@ -49,6 +49,7 @@ pub struct NativeFunc {
 pub enum Function {
     Function(Func), //0:parameters,1:body
     Native(NativeFunc),
+    Initializer(Class),
 }
 impl Function {
     fn display(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -58,6 +59,9 @@ impl Function {
             }
             Function::Native(native) => {
                 write!(f, "native function {}", native.name)
+            }
+            Function::Initializer(class) => {
+                write!(f, "{} initializer", class)
             }
         }
     }
@@ -84,7 +88,6 @@ pub enum Literal {
     Boolean(bool),
     Callable(Function),
     Nil,
-    Class(Class),
     Instance(Rc<RefCell<Instance>>),
 }
 impl Display for Literal {
@@ -95,7 +98,6 @@ impl Display for Literal {
             Literal::Number(n) => write!(f, "{:.}", *n),
             Literal::String(s) => write!(f, "{}", s),
             Literal::Callable(ff) => write!(f, "{}", ff),
-            Literal::Class(c) => write!(f, "{}", c),
             Literal::Instance(i) => write!(f, "{}", i.borrow()),
         }
     }
@@ -112,10 +114,14 @@ impl Literal {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Class {
     name: String,
+    methods: FxHashMap<String, Literal>,
 }
 impl Class {
-    pub fn new(name: String) -> Self {
-        Self { name }
+    pub fn new(name: String, methods: FxHashMap<String, Literal>) -> Self {
+        Self { name, methods }
+    }
+    fn get_method(&self, name: &str) -> Option<Literal> {
+        self.methods.get(name).cloned()
     }
 }
 impl Display for Class {
@@ -136,7 +142,10 @@ impl Instance {
         }
     }
     pub fn get(&self, name: &str) -> Option<Literal> {
-        self.fields.get(name).cloned()
+        self.fields
+            .get(name)
+            .cloned()
+            .or_else(|| self.class.get_method(name))
     }
     pub fn set(&mut self, name: &str, value: Literal) {
         self.fields.insert(name.to_string(), value);
