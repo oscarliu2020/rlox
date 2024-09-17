@@ -131,25 +131,7 @@ impl Interpreter {
         )
     }
 }
-impl RloxCallable for Class {
-    fn arity(&self) -> usize {
-        self.get_method("init").map_or(0, |e| {
-            let Literal::Callable(ref f) = e else {
-                unreachable!()
-            };
-            f.arity()
-        })
-    }
-    fn call(self, interpreter: &mut Interpreter, args: Vec<Literal>) -> VisitorResult<Literal> {
-        let inner = Rc::new(RefCell::new(Instance::new(self)));
-        let instance = Literal::Instance(Rc::clone(&inner));
-        let ff = inner.borrow().class.get_method("init");
-        if let Some(Literal::Callable(Function::Function(mut init))) = ff {
-            Function::Function(init.bind(Rc::clone(&inner))).call(interpreter, args)?;
-        }
-        Ok(instance)
-    }
-}
+
 impl StmtVisitor for Interpreter {
     fn visit_while(&mut self, cond: &Expr, body: &Stmt) -> VisitorResult<()> {
         while self.evaluate(cond)?.is_truthy() {
