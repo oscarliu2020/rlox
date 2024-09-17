@@ -4,6 +4,7 @@ use std::rc::Rc;
 pub struct Resolver {
     scopes: Vec<FxHashMap<String, bool>>,
     cur_func: FunctionType,
+    cur_class: ClassType,
 }
 use thiserror::Error;
 #[derive(Error, Debug)]
@@ -14,6 +15,8 @@ pub enum ResolverError {
     AlreadyDeclared(Token),
     #[error("Can't return from top-level code.")]
     ReturnFromTopLevel,
+    #[error("Can't use 'this' outside of a class.")]
+    InvalidThis(Token),
 }
 impl Default for Resolver {
     fn default() -> Self {
@@ -26,11 +29,17 @@ enum FunctionType {
     Function,
     Method,
 }
+#[derive(Clone, Copy, PartialEq)]
+enum ClassType {
+    None,
+    Class,
+}
 impl Resolver {
     pub fn new() -> Self {
         Resolver {
             scopes: vec![],
             cur_func: FunctionType::None,
+            cur_class: ClassType::None,
         }
     }
     pub fn resolve(&mut self, stmts: &[Stmt]) -> VisitorResult<()> {
@@ -169,6 +178,8 @@ impl StmtVisitor for Resolver {
         Ok(())
     }
     fn visit_class(&mut self, class: &ClassStmt) -> VisitorResult<()> {
+        let enclosing_class = self.cur_class;
+        self.cur_class = ClassType::Class;
         self.declare(&class.name)?;
         self.define(&class.name);
         self.begin_scope();
@@ -185,6 +196,7 @@ impl StmtVisitor for Resolver {
             )?;
         }
         self.end_scope();
+        self.cur_class = enclosing_class;
         Ok(())
     }
 }
@@ -246,6 +258,9 @@ impl ExprVisitor for Resolver {
         Ok(Literal::Nil)
     }
     fn visit_this(&mut self, this: &This) -> VisitorResult<Literal> {
+        if self.cur_class == ClassType::None {
+            return Err(ResolverError::InvalidThis(this.token.clone()).into());
+        }
         self.resolve_local(this)?;
         Ok(Literal::Nil)
     }

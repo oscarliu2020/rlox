@@ -57,7 +57,7 @@ impl Function {
                 write!(f, "native function {}", native.name)
             }
             Function::Initializer(class) => {
-                write!(f, "{} initializer", class)
+                write!(f, "{}", class)
             }
         }
     }

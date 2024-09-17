@@ -195,7 +195,7 @@ impl Set {
 }
 #[derive(Debug, PartialEq)]
 pub struct This {
-    token: Token,
+    pub token: Token,
     dist: Cell<Option<usize>>,
 }
 impl Display for This {
