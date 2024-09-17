@@ -246,7 +246,7 @@ impl ExprVisitor for Resolver {
         Ok(Literal::Nil)
     }
     fn visit_this(&mut self, this: &This) -> VisitorResult<Literal> {
-        self.resolve_local(this);
+        self.resolve_local(this)?;
         Ok(Literal::Nil)
     }
 }

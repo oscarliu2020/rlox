@@ -2,10 +2,8 @@ use rustc_hash::FxHashMap;
 
 use super::environment::{Environment, EnvironmentRef, Envt};
 use crate::resolver::Resolvable;
-use crate::syntax::ast::{Assign, Expr, ExprVisitor, FnStmt, Stmt, StmtVisitor, Variable};
-use crate::syntax::token::{
-    Class, Func, Function, Instance, Literal, NativeFunc, Token, TokenType,
-};
+use crate::syntax::ast::*;
+use crate::syntax::token::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 pub struct Interpreter {
@@ -109,7 +107,6 @@ impl Interpreter {
                 }
             }
         }
-        // self.environment = self.environment.enclosing.take().unwrap();
         self.environment = prev;
         Ok(())
     }
@@ -134,34 +131,40 @@ impl RloxCallable for Class {
     }
 }
 impl StmtVisitor for Interpreter {
-    fn visit_block(&mut self, stmts: &[Stmt]) -> VisitorResult<()> {
-        let block_env = Environment::new(Some(Rc::clone(&self.environment)));
-        self.execute_block(stmts, block_env)
-    }
-    fn visit_class(&mut self, class: &crate::syntax::ast::ClassStmt) -> VisitorResult<()> {
-        // self.environment.define(
-        //     class.name.lexeme.clone(),
-        //     Literal::Class(Class::new(class.name.lexeme.clone())),
-        // );
-        self.environment
-            .define(class.name.lexeme.clone(), Literal::Nil);
-        let mut method_table = FxHashMap::default();
-        for method in class.methods.iter() {
-            let func = Function::Function(Func {
-                decl: Rc::new(method.clone()),
-                closure: Rc::clone(&self.environment),
-            });
-            method_table.insert(method.name.lexeme.clone(), Literal::Callable(func));
+    fn visit_while(&mut self, cond: &Expr, body: &Stmt) -> VisitorResult<()> {
+        while self.evaluate(cond)?.is_truthy() {
+            self.execute(body)?;
         }
-        let klass = Literal::Callable(Function::Initializer(Class::new(
-            class.name.lexeme.clone(),
-            method_table,
-        )));
-        self.environment.assign(&class.name, klass.clone())?;
         Ok(())
     }
     fn visit_expression(&mut self, expr: &Expr) -> VisitorResult<()> {
         self.evaluate(expr).map(|_| ())
+    }
+    fn visit_print(&mut self, expr: &Expr) -> VisitorResult<()> {
+        self.evaluate(expr).map(|res| {
+            println!("{}", res);
+        })
+    }
+    fn visit_var(&mut self, token: &Token, expr: Option<&Expr>) -> VisitorResult<()> {
+        let value = if let Some(expr) = expr {
+            self.evaluate(expr)?
+        } else {
+            Literal::Nil
+        };
+        self.environment.define(token.lexeme.clone(), value);
+        Ok(())
+    }
+    fn visit_block(&mut self, stmts: &[Stmt]) -> VisitorResult<()> {
+        let block_env = Environment::new(Some(Rc::clone(&self.environment)));
+        self.execute_block(stmts, block_env)
+    }
+    fn visit_if(&mut self, cond: &Expr, body: &(Stmt, Option<Stmt>)) -> VisitorResult<()> {
+        if self.evaluate(cond)?.is_truthy() {
+            self.execute(&body.0)?;
+        } else if let Some(else_stmt) = &body.1 {
+            self.execute(else_stmt)?;
+        }
+        Ok(())
     }
     fn visit_function(
         &mut self,
@@ -181,19 +184,6 @@ impl StmtVisitor for Interpreter {
             .define(name.lexeme.clone(), Literal::Callable(new_func));
         Ok(())
     }
-    fn visit_if(&mut self, cond: &Expr, body: &(Stmt, Option<Stmt>)) -> VisitorResult<()> {
-        if self.evaluate(cond)?.is_truthy() {
-            self.execute(&body.0)?;
-        } else if let Some(else_stmt) = &body.1 {
-            self.execute(else_stmt)?;
-        }
-        Ok(())
-    }
-    fn visit_print(&mut self, expr: &Expr) -> VisitorResult<()> {
-        self.evaluate(expr).map(|res| {
-            println!("{}", res);
-        })
-    }
     fn visit_return(&mut self, _token: &Token, expr: Option<&Expr>) -> VisitorResult<()> {
         let value = if let Some(expr) = expr {
             self.evaluate(expr)?
@@ -202,47 +192,27 @@ impl StmtVisitor for Interpreter {
         };
         Err(VisitorError::ReturnValue(value))
     }
-    fn visit_var(&mut self, token: &Token, expr: Option<&Expr>) -> VisitorResult<()> {
-        let value = if let Some(expr) = expr {
-            self.evaluate(expr)?
-        } else {
-            Literal::Nil
-        };
-        self.environment.define(token.lexeme.clone(), value);
-        Ok(())
-    }
-    fn visit_while(&mut self, cond: &Expr, body: &Stmt) -> VisitorResult<()> {
-        while self.evaluate(cond)?.is_truthy() {
-            self.execute(body)?;
+    fn visit_class(&mut self, class: &crate::syntax::ast::ClassStmt) -> VisitorResult<()> {
+        self.environment
+            .define(class.name.lexeme.clone(), Literal::Nil);
+        let mut method_table = FxHashMap::default();
+        for method in class.methods.iter() {
+            let func = Function::Function(Func {
+                decl: Rc::new(method.clone()),
+                closure: Rc::clone(&self.environment),
+            });
+            method_table.insert(method.name.lexeme.clone(), Literal::Callable(func));
         }
+        let klass = Literal::Callable(Function::Initializer(Class::new(
+            class.name.lexeme.clone(),
+            method_table,
+        )));
+        self.environment.assign(&class.name, klass.clone())?;
         Ok(())
     }
 }
 
 impl ExprVisitor for Interpreter {
-    fn visit_assign(&mut self, assign: &Assign) -> VisitorResult<Literal> {
-        let value = self.evaluate(&assign.value)?;
-        // self.environment
-        //     .borrow_mut()
-        //     .assign(assign.name(), value.clone())?;
-        // Ok(value)
-        assign
-            .get_dist()
-            .map_or_else(
-                || {
-                    self.global
-                        .assign(assign.name(), value.clone())
-                        .map_err(|e| e.into())
-                },
-                |dist| {
-                    self.environment
-                        .assign_at(dist, assign.name(), value.clone())
-                        .map_err(|e| e.into())
-                },
-            )
-            .map(|_| value)
-        // todo!()
-    }
     fn visit_binary(&mut self, token: &Token, e1: &Expr, e2: &Expr) -> VisitorResult<Literal> {
         let l = self.evaluate(e1)?;
         let r = self.evaluate(e2)?;
@@ -311,36 +281,48 @@ impl ExprVisitor for Interpreter {
             }
         }
     }
-    fn visit_call(
-        &mut self,
-        callee: &Expr,
-        paren: &Token,
-        args: &[Expr],
-    ) -> VisitorResult<Literal> {
-        let callee = self.evaluate(callee)?;
-        let mut arguments = Vec::new();
-        for arg in args {
-            arguments.push(self.evaluate(arg)?);
-        }
-        match callee {
-            Literal::Callable(callable) => {
-                if arguments.len() != callable.arity() {
-                    return Err(VisitorError::ArityNotMatched(
-                        callable.arity(),
-                        arguments.len(),
-                        paren.clone(),
-                    ));
-                }
-                callable.call(self, arguments)
-            }
-            _ => Err(VisitorError::VistorError),
-        }
-    }
     fn visit_grouping(&mut self, expr: &Expr) -> VisitorResult<Literal> {
         self.evaluate(expr)
     }
     fn visit_literal(&mut self, ltr: &Literal) -> VisitorResult<Literal> {
         Ok(ltr.clone())
+    }
+    fn visit_unary(&mut self, token: &Token, expr: &Expr) -> VisitorResult<Literal> {
+        let right = self.evaluate(expr)?;
+        match token.token_type {
+            TokenType::MINUS => match right {
+                Literal::Number(n) => Ok(Literal::Number(-n)),
+                _ => Err(VisitorError::VistorError),
+            },
+            TokenType::BANG => Ok(Literal::Boolean(!right.is_truthy())),
+            _ => Err(VisitorError::UnknownOperator(token.clone(), "unary")),
+        }
+    }
+    fn visit_variable(&mut self, variable: &Variable) -> VisitorResult<Literal> {
+        self.look_up_variable(variable)
+    }
+    fn visit_assign(&mut self, assign: &Assign) -> VisitorResult<Literal> {
+        let value = self.evaluate(&assign.value)?;
+        // self.environment
+        //     .borrow_mut()
+        //     .assign(assign.name(), value.clone())?;
+        // Ok(value)
+        assign
+            .get_dist()
+            .map_or_else(
+                || {
+                    self.global
+                        .assign(assign.name(), value.clone())
+                        .map_err(|e| e.into())
+                },
+                |dist| {
+                    self.environment
+                        .assign_at(dist, assign.name(), value.clone())
+                        .map_err(|e| e.into())
+                },
+            )
+            .map(|_| value)
+        // todo!()
     }
     fn visit_logical(
         &mut self,
@@ -367,21 +349,32 @@ impl ExprVisitor for Interpreter {
         }
         self.evaluate(right)
     }
-    fn visit_unary(&mut self, token: &Token, expr: &Expr) -> VisitorResult<Literal> {
-        let right = self.evaluate(expr)?;
-        match token.token_type {
-            TokenType::MINUS => match right {
-                Literal::Number(n) => Ok(Literal::Number(-n)),
-                _ => Err(VisitorError::VistorError),
-            },
-            TokenType::BANG => Ok(Literal::Boolean(!right.is_truthy())),
-            _ => Err(VisitorError::UnknownOperator(token.clone(), "unary")),
+    fn visit_call(
+        &mut self,
+        callee: &Expr,
+        paren: &Token,
+        args: &[Expr],
+    ) -> VisitorResult<Literal> {
+        let callee = self.evaluate(callee)?;
+        let mut arguments = Vec::new();
+        for arg in args {
+            arguments.push(self.evaluate(arg)?);
+        }
+        match callee {
+            Literal::Callable(callable) => {
+                if arguments.len() != callable.arity() {
+                    return Err(VisitorError::ArityNotMatched(
+                        callable.arity(),
+                        arguments.len(),
+                        paren.clone(),
+                    ));
+                }
+                callable.call(self, arguments)
+            }
+            _ => Err(VisitorError::VistorError),
         }
     }
-    fn visit_variable(&mut self, variable: &Variable) -> VisitorResult<Literal> {
-        self.look_up_variable(variable)
-    }
-    fn visit_get(&mut self, get: &crate::syntax::ast::Get) -> VisitorResult<Literal> {
+    fn visit_get(&mut self, get: &Get) -> VisitorResult<Literal> {
         let x = self.evaluate(&get.object)?;
         if let Literal::Instance(instance) = x {
             Instance::get(&get.name, &instance).ok_or_else(|| {
@@ -391,7 +384,7 @@ impl ExprVisitor for Interpreter {
             Err(VisitorError::VistorError)
         }
     }
-    fn visitor_set(&mut self, set: &crate::syntax::ast::Set) -> VisitorResult<Literal> {
+    fn visitor_set(&mut self, set: &Set) -> VisitorResult<Literal> {
         let obj = self.evaluate(&set.object)?;
         if let Literal::Instance(instance) = obj {
             let value = self.evaluate(&set.value)?;
@@ -401,7 +394,7 @@ impl ExprVisitor for Interpreter {
             Err(VisitorError::VistorError)
         }
     }
-    fn visit_this(&mut self, token: &crate::syntax::ast::This) -> VisitorResult<Literal> {
+    fn visit_this(&mut self, token: &This) -> VisitorResult<Literal> {
         self.look_up_variable(token)
     }
 }

@@ -18,24 +18,12 @@ impl PartialEq for Func {
 }
 impl Func {
     pub fn name(&self) -> &str {
-        // match &*self.decl {
-        //     Stmt::Function(name, _, _) => &name.lexeme,
-        //     _ => panic!("Not a function"),
-        // }
         &self.decl.name.lexeme
     }
     pub fn params(&self) -> &[Token] {
-        // match &*self.decl {
-        //     Stmt::Function(_, params, _) => params,
-        //     _ => panic!("Not a function"),
-        // }
         &self.decl.params
     }
     pub fn body(&mut self) -> &[Stmt] {
-        // match &*self.decl {
-        //     Stmt::Function(_, _, body) => body,
-        //     _ => panic!("Not a function"),
-        // }
         &self.decl.body
     }
     pub fn bind(&mut self, instance: Rc<RefCell<Instance>>) -> Self {
@@ -84,11 +72,6 @@ impl fmt::Debug for Function {
         self.display(f)
     }
 }
-// impl<T> Func for T where T: fn() -> Literal + Clone {}
-// struct LoxFn {
-//     function_type: Function,
-//     closure:Box<dyn Func>
-// }
 #[derive(Debug, Clone, PartialEq)]
 pub enum Literal {
     Number(f64),
@@ -149,16 +132,6 @@ impl Instance {
             fields: FxHashMap::default(),
         }
     }
-    // pub fn get(&self, name: &str) -> Option<Literal> {
-    //     self.fields.get(name).cloned().or_else(|| {
-    //         let Literal::Callable(Function::Function(method)) = self.class.get_method(name)? else {
-    //             unreachable!()
-    //         };
-    //         // Some(Literal::Callable(method))
-    //         //method.bind(self);
-    //         Some(Literal::Callable(Function::Function(method)))
-    //     })
-    // }
     pub fn get(name: &Token, instance: &Rc<RefCell<Instance>>) -> Option<Literal> {
         instance
             .borrow()
@@ -171,8 +144,6 @@ impl Instance {
                 else {
                     unreachable!()
                 };
-                // Some(Literal::Callable(method))
-                //method.bind(self);
                 Some(Literal::Callable(Function::Function(
                     method.bind(Rc::clone(instance)),
                 )))
