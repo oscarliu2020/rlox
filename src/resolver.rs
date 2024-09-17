@@ -171,6 +171,11 @@ impl StmtVisitor for Resolver {
     fn visit_class(&mut self, class: &ClassStmt) -> VisitorResult<()> {
         self.declare(&class.name)?;
         self.define(&class.name);
+        self.begin_scope();
+        self.scopes
+            .last_mut()
+            .unwrap()
+            .insert("this".to_owned(), true);
         for method in class.methods.iter() {
             self.resolve_function(
                 &method.name,
@@ -179,6 +184,7 @@ impl StmtVisitor for Resolver {
                 FunctionType::Method,
             )?;
         }
+        self.end_scope();
         Ok(())
     }
 }
@@ -237,6 +243,10 @@ impl ExprVisitor for Resolver {
     fn visitor_set(&mut self, set: &Set) -> VisitorResult<Literal> {
         self.resolve_expr(&set.value)?;
         self.resolve_expr(&set.object)?;
+        Ok(Literal::Nil)
+    }
+    fn visit_this(&mut self, this: &This) -> VisitorResult<Literal> {
+        self.resolve_local(this);
         Ok(Literal::Nil)
     }
 }

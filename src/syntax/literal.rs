@@ -2,7 +2,7 @@ use rustc_hash::FxHashMap;
 
 use super::ast::{FnStmt, Stmt};
 use super::token::Token;
-use crate::environment::EnvironmentRef;
+use crate::environment::{Environment, EnvironmentRef, Envt};
 use std::cell::RefCell;
 use std::fmt::{self, Display};
 use std::rc::Rc;
@@ -37,6 +37,14 @@ impl Func {
         //     _ => panic!("Not a function"),
         // }
         &self.decl.body
+    }
+    pub fn bind(&mut self, instance: Rc<RefCell<Instance>>) -> Self {
+        let mut envrionment = Environment::new(Some(self.closure.clone()));
+        envrionment.define("this".to_owned(), Literal::Instance(instance));
+        Func {
+            decl: Rc::clone(&self.decl),
+            closure: Rc::new(RefCell::new(envrionment)),
+        }
     }
 }
 #[derive(Debug, Clone, PartialEq)]
@@ -141,11 +149,34 @@ impl Instance {
             fields: FxHashMap::default(),
         }
     }
-    pub fn get(&self, name: &str) -> Option<Literal> {
-        self.fields
-            .get(name)
+    // pub fn get(&self, name: &str) -> Option<Literal> {
+    //     self.fields.get(name).cloned().or_else(|| {
+    //         let Literal::Callable(Function::Function(method)) = self.class.get_method(name)? else {
+    //             unreachable!()
+    //         };
+    //         // Some(Literal::Callable(method))
+    //         //method.bind(self);
+    //         Some(Literal::Callable(Function::Function(method)))
+    //     })
+    // }
+    pub fn get(name: &Token, instance: &Rc<RefCell<Instance>>) -> Option<Literal> {
+        instance
+            .borrow()
+            .fields
+            .get(&name.lexeme)
             .cloned()
-            .or_else(|| self.class.get_method(name))
+            .or_else(|| {
+                let Literal::Callable(Function::Function(mut method)) =
+                    instance.borrow().class.get_method(&name.lexeme)?
+                else {
+                    unreachable!()
+                };
+                // Some(Literal::Callable(method))
+                //method.bind(self);
+                Some(Literal::Callable(Function::Function(
+                    method.bind(Rc::clone(instance)),
+                )))
+            })
     }
     pub fn set(&mut self, name: &str, value: Literal) {
         self.fields.insert(name.to_string(), value);

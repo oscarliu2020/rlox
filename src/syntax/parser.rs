@@ -1,4 +1,4 @@
-use super::ast::{self, Assign, FnStmt, Get, Set, Variable};
+use super::ast::{self, Assign, FnStmt, Get, Set, This, Variable};
 use super::token::{Literal, Token, TokenType};
 use std::rc::Rc;
 pub struct Parser<'a> {
@@ -120,6 +120,9 @@ impl<'a> Parser<'a> {
         }
         if match_token!(self, [TokenType::IDENTIFIER]) {
             return Ok(ast::Expr::Variable(Variable::new(self.previous().clone())));
+        }
+        if match_token!(self, [TokenType::THIS]) {
+            return Ok(ast::Expr::This(This::new(self.previous().clone())));
         }
         self.error(self.peek(), "expected expression");
         Err(ParserError())

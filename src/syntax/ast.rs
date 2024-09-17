@@ -15,6 +15,7 @@ pub enum Expr {
     Call(Rc<Expr>, Token, Rc<[Expr]>),
     Get(Get),
     Set(Set),
+    This(This),
 }
 impl Display for Expr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -52,6 +53,9 @@ impl Display for Expr {
             }
             Expr::Set(set) => {
                 write!(f, "{}", set)
+            }
+            Expr::This(_) => {
+                write!(f, "this")
             }
         }
     }
@@ -189,7 +193,24 @@ impl Set {
         }
     }
 }
-
+#[derive(Debug, PartialEq)]
+pub struct This {
+    token: Token,
+    dist: Cell<Option<usize>>,
+}
+impl Display for This {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "this")
+    }
+}
+impl This {
+    pub fn new(token: Token) -> Self {
+        Self {
+            token,
+            dist: Cell::new(None),
+        }
+    }
+}
 pub use super::visitor::*;
 impl Stmt {
     pub fn accept(&self, visitor: &mut impl StmtVisitor) -> VisitorResult<()> {
@@ -221,6 +242,7 @@ impl Expr {
             Expr::Call(callee, paren, args) => visitor.visit_call(callee, paren, args),
             Expr::Get(get) => visitor.visit_get(get),
             Expr::Set(set) => visitor.visitor_set(set),
+            Expr::This(this) => visitor.visit_this(this),
         }
     }
 }
@@ -239,6 +261,17 @@ impl Resolvable for Variable {
 impl Resolvable for Assign {
     fn name(&self) -> &Token {
         &self.name
+    }
+    fn get_dist(&self) -> Option<usize> {
+        self.dist.get()
+    }
+    fn set_dist(&self, dist: usize) {
+        self.dist.set(Some(dist));
+    }
+}
+impl Resolvable for This {
+    fn name(&self) -> &Token {
+        &self.token
     }
     fn get_dist(&self) -> Option<usize> {
         self.dist.get()

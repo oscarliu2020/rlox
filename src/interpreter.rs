@@ -384,7 +384,7 @@ impl ExprVisitor for Interpreter {
     fn visit_get(&mut self, get: &crate::syntax::ast::Get) -> VisitorResult<Literal> {
         let x = self.evaluate(&get.object)?;
         if let Literal::Instance(instance) = x {
-            instance.borrow().get(&get.name.lexeme).ok_or_else(|| {
+            Instance::get(&get.name, &instance).ok_or_else(|| {
                 VisitorError::UndefinedProperty(get.name.clone(), get.name.lexeme.clone())
             })
         } else {
@@ -400,6 +400,9 @@ impl ExprVisitor for Interpreter {
         } else {
             Err(VisitorError::VistorError)
         }
+    }
+    fn visit_this(&mut self, token: &crate::syntax::ast::This) -> VisitorResult<Literal> {
+        self.look_up_variable(token)
     }
 }
 
@@ -638,6 +641,23 @@ counter(); // "2".
             }
 
             Bacon().eat(); // Prints "Crunch crunch crunch!".
+            "#,
+            &mut interpreter,
+        );
+    }
+    #[test]
+    fn test_this() {
+        let mut interpreter = Interpreter::default();
+        run(
+            r#"
+            class Foo {
+                bar() {
+                    print this.x;
+                }
+            }
+            var foo = Foo();
+            foo.x=1;
+            foo.bar();
             "#,
             &mut interpreter,
         );
