@@ -1,4 +1,5 @@
 use super::syntax::{ast::*, token::*};
+use core::error;
 use rustc_hash::FxHashMap;
 use std::rc::Rc;
 pub struct Resolver {
@@ -17,6 +18,8 @@ pub enum ResolverError {
     ReturnFromTopLevel,
     #[error("Can't use 'this' outside of a class.")]
     InvalidThis(Token),
+    #[error("Can't return a value from an initializer.")]
+    ReturnFromInitializer,
 }
 impl Default for Resolver {
     fn default() -> Self {
@@ -28,6 +31,7 @@ enum FunctionType {
     None,
     Function,
     Method,
+    Initializer,
 }
 #[derive(Clone, Copy, PartialEq)]
 enum ClassType {
@@ -156,6 +160,9 @@ impl StmtVisitor for Resolver {
             return Err(ResolverError::ReturnFromTopLevel.into());
         }
         if let Some(expr) = expr {
+            if self.cur_func == FunctionType::Initializer {
+                return Err(ResolverError::ReturnFromInitializer.into());
+            }
             self.resolve_expr(expr)?;
         }
         Ok(())
@@ -188,11 +195,16 @@ impl StmtVisitor for Resolver {
             .unwrap()
             .insert("this".to_owned(), true);
         for method in class.methods.iter() {
+            let ftype = if method.name.lexeme == "init" {
+                FunctionType::Initializer
+            } else {
+                FunctionType::Method
+            };
             self.resolve_function(
                 &method.name,
                 Rc::clone(&method.params),
                 Rc::clone(&method.body),
-                FunctionType::Method,
+                ftype,
             )?;
         }
         self.end_scope();

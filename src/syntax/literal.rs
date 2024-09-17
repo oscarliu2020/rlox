@@ -10,6 +10,7 @@ use std::rc::Rc;
 pub struct Func {
     pub decl: Rc<FnStmt>,
     pub closure: EnvironmentRef,
+    pub is_initializer: bool,
 }
 impl PartialEq for Func {
     fn eq(&self, other: &Self) -> bool {
@@ -32,6 +33,7 @@ impl Func {
         Func {
             decl: Rc::clone(&self.decl),
             closure: Rc::new(RefCell::new(envrionment)),
+            is_initializer: self.is_initializer,
         }
     }
 }
@@ -43,9 +45,9 @@ pub struct NativeFunc {
 }
 #[derive(Clone, PartialEq)]
 pub enum Function {
-    Function(Func), //0:parameters,1:body
+    Function(Func),
     Native(NativeFunc),
-    Initializer(Class),
+    Class(Class),
 }
 impl Function {
     fn display(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -56,7 +58,7 @@ impl Function {
             Function::Native(native) => {
                 write!(f, "native function {}", native.name)
             }
-            Function::Initializer(class) => {
+            Function::Class(class) => {
                 write!(f, "{}", class)
             }
         }

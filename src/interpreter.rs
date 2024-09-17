@@ -44,7 +44,7 @@ impl RloxCallable for Function {
         match self {
             Function::Function(func) => func.params().len(),
             Function::Native(native) => native.arity,
-            Function::Initializer(class) => class.get_method("init").map_or(0, |e| {
+            Function::Class(class) => class.get_method("init").map_or(0, |e| {
                 let Literal::Callable(ref f) = e else {
                     unreachable!()
                 };
@@ -60,13 +60,29 @@ impl RloxCallable for Function {
                     func_env.define(param.lexeme.clone(), arg.clone());
                 }
                 match interpreter.execute_block(f.body(), func_env) {
-                    Ok(_) => Ok(Literal::Nil),
+                    Ok(_) => {
+                        if f.is_initializer {
+                            return f
+                                .closure
+                                .get_at(
+                                    0,
+                                    &Token {
+                                        token_type: TokenType::THIS,
+                                        lexeme: "this".to_owned(),
+                                        literal: None,
+                                        line: 0,
+                                    },
+                                )
+                                .map_err(|e| e.into());
+                        }
+                        Ok(Literal::Nil)
+                    }
                     Err(VisitorError::ReturnValue(value)) => Ok(value),
                     Err(e) => Err(e),
                 }
             }
             Function::Native(native) => Ok((native.func)()),
-            Function::Initializer(class) => {
+            Function::Class(class) => {
                 let inner = Rc::new(RefCell::new(Instance::new(class)));
                 let instance = Literal::Instance(Rc::clone(&inner));
                 let ff = inner.borrow().class.get_method("init");
@@ -181,6 +197,7 @@ impl StmtVisitor for Interpreter {
                 body,
             }),
             closure: Rc::clone(&self.environment),
+            is_initializer: false,
         });
         self.environment
             .define(name.lexeme.clone(), Literal::Callable(new_func));
@@ -199,13 +216,15 @@ impl StmtVisitor for Interpreter {
             .define(class.name.lexeme.clone(), Literal::Nil);
         let mut method_table = FxHashMap::default();
         for method in class.methods.iter() {
+            let is_initializer = method.name.lexeme == "init";
             let func = Function::Function(Func {
                 decl: Rc::new(method.clone()),
                 closure: Rc::clone(&self.environment),
+                is_initializer,
             });
             method_table.insert(method.name.lexeme.clone(), Literal::Callable(func));
         }
-        let klass = Literal::Callable(Function::Initializer(Class::new(
+        let klass = Literal::Callable(Function::Class(Class::new(
             class.name.lexeme.clone(),
             method_table,
         )));
