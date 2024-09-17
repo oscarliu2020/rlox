@@ -44,7 +44,12 @@ impl RloxCallable for Function {
         match self {
             Function::Function(func) => func.params().len(),
             Function::Native(native) => native.arity,
-            Function::Initializer(_) => 0,
+            Function::Initializer(class) => class.get_method("init").map_or(0, |e| {
+                let Literal::Callable(ref f) = e else {
+                    unreachable!()
+                };
+                f.arity()
+            }),
         }
     }
     fn call(self, interpreter: &mut Interpreter, args: Vec<Literal>) -> VisitorResult<Literal> {
@@ -62,7 +67,12 @@ impl RloxCallable for Function {
             }
             Function::Native(native) => Ok((native.func)()),
             Function::Initializer(class) => {
-                let instance = Literal::Instance(Rc::new(RefCell::new(Instance::new(class))));
+                let inner = Rc::new(RefCell::new(Instance::new(class)));
+                let instance = Literal::Instance(Rc::clone(&inner));
+                let ff = inner.borrow().class.get_method("init");
+                if let Some(Literal::Callable(Function::Function(mut init))) = ff {
+                    Function::Function(init.bind(Rc::clone(&inner))).call(interpreter, args)?;
+                }
                 Ok(instance)
             }
         }
@@ -123,10 +133,20 @@ impl Interpreter {
 }
 impl RloxCallable for Class {
     fn arity(&self) -> usize {
-        0
+        self.get_method("init").map_or(0, |e| {
+            let Literal::Callable(ref f) = e else {
+                unreachable!()
+            };
+            f.arity()
+        })
     }
-    fn call(self, _: &mut Interpreter, _: Vec<Literal>) -> VisitorResult<Literal> {
-        let instance = Literal::Instance(Rc::new(RefCell::new(Instance::new(self))));
+    fn call(self, interpreter: &mut Interpreter, args: Vec<Literal>) -> VisitorResult<Literal> {
+        let inner = Rc::new(RefCell::new(Instance::new(self)));
+        let instance = Literal::Instance(Rc::clone(&inner));
+        let ff = inner.borrow().class.get_method("init");
+        if let Some(Literal::Callable(Function::Function(mut init))) = ff {
+            Function::Function(init.bind(Rc::clone(&inner))).call(interpreter, args)?;
+        }
         Ok(instance)
     }
 }
@@ -650,6 +670,25 @@ counter(); // "2".
             }
             var foo = Foo();
             foo.x=1;
+            foo.bar();
+            "#,
+            &mut interpreter,
+        );
+    }
+    #[test]
+    fn test_init() {
+        let mut interpreter = Interpreter::default();
+        run(
+            r#"
+            class Foo {
+                init(x) {
+                    this.x = x;
+                }
+                bar() {
+                    print this.x;
+                }
+            }
+            var foo = Foo(1);
             foo.bar();
             "#,
             &mut interpreter,

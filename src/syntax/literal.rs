@@ -105,13 +105,13 @@ impl Literal {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Class {
     name: String,
-    methods: FxHashMap<String, Literal>,
+    pub methods: FxHashMap<String, Literal>,
 }
 impl Class {
     pub fn new(name: String, methods: FxHashMap<String, Literal>) -> Self {
         Self { name, methods }
     }
-    fn get_method(&self, name: &str) -> Option<Literal> {
+    pub fn get_method(&self, name: &str) -> Option<Literal> {
         self.methods.get(name).cloned()
     }
 }
