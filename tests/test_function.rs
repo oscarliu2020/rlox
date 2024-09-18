@@ -15,10 +15,10 @@ fn extra_arguments() {
 fn local_mutual_recursion() {
     run_file("test_data/function/local_mutual_recursion.lox");
 }
-// #[test]
-// fn local_recursion() {
-//     run_file("test_data/function/local_recursion.lox");
-// }
+#[test]
+fn local_recursion() {
+    run_file("test_data/function/local_recursion.lox");
+}
 #[test]
 fn missing_arguments() {
     run_file("test_data/function/missing_arguments.lox");

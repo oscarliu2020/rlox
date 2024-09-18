@@ -1,4 +1,4 @@
-use super::ast::{self, Assign, FnStmt, Variable};
+use super::ast::{self, Assign, FnStmt, Get, Set, This, Variable};
 use super::token::{Literal, Token, TokenType};
 use std::rc::Rc;
 pub struct Parser<'a> {
@@ -121,6 +121,9 @@ impl<'a> Parser<'a> {
         if match_token!(self, [TokenType::IDENTIFIER]) {
             return Ok(ast::Expr::Variable(Variable::new(self.previous().clone())));
         }
+        if match_token!(self, [TokenType::THIS]) {
+            return Ok(ast::Expr::This(This::new(self.previous().clone())));
+        }
         self.error(self.peek(), "expected expression");
         Err(ParserError())
     }
@@ -147,6 +150,10 @@ impl<'a> Parser<'a> {
         loop {
             if match_token!(self, [TokenType::LEFT_PAREN]) {
                 expr = self.finish_call(expr)?;
+            } else if match_token!(self, TokenType::DOT) {
+                let name =
+                    self.consume(TokenType::IDENTIFIER, "expected property name after '.'")?;
+                expr = ast::Expr::Get(Get::new(Rc::new(expr), name.clone()));
             } else {
                 break;
             }
@@ -231,6 +238,9 @@ impl<'a> Parser<'a> {
             match expr {
                 ast::Expr::Variable(name) => {
                     return Ok(ast::Expr::Assign(Assign::new(name.name, Rc::new(value))));
+                }
+                ast::Expr::Get(get) => {
+                    return Ok(ast::Expr::Set(Set::from_get(get, Rc::new(value))));
                 }
                 _ => {
                     self.error(&equals, "Invalid assignment target");
@@ -391,6 +401,22 @@ impl<'a> Parser<'a> {
             body.into(),
         )))
     }
+    fn class_declaration(&mut self) -> Result<ast::Stmt, ParserError> {
+        let name = self.consume(TokenType::IDENTIFIER, "Expect class name")?;
+        self.consume(TokenType::LEFT_BRACE, "Expect '{' before class body")?;
+        let mut methods = vec![];
+        while !self.check(&TokenType::RIGHT_BRACE) && !self.is_at_end() {
+            let ast::Stmt::Function(func) = self.function("method")? else {
+                unreachable!()
+            };
+            methods.push(func);
+        }
+        self.consume(TokenType::RIGHT_BRACE, "Expect '}' after class body")?;
+        Ok(ast::Stmt::Class(ast::ClassStmt::new(
+            name.clone(),
+            methods.into(),
+        )))
+    }
     fn declaration(&mut self) -> Option<ast::Stmt> {
         // let res = if match_token!(self, [TokenType::VAR]) {
         //     self.var_declaration()
@@ -405,6 +431,10 @@ impl<'a> Parser<'a> {
             TokenType::FUN => {
                 self.advance();
                 self.function("function")
+            }
+            TokenType::CLASS => {
+                self.advance();
+                self.class_declaration()
             }
             _ => self.statement(),
         };

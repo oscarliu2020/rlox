@@ -4,6 +4,7 @@ use std::rc::Rc;
 pub struct Resolver {
     scopes: Vec<FxHashMap<String, bool>>,
     cur_func: FunctionType,
+    cur_class: ClassType,
 }
 use thiserror::Error;
 #[derive(Error, Debug)]
@@ -14,6 +15,10 @@ pub enum ResolverError {
     AlreadyDeclared(Token),
     #[error("Can't return from top-level code.")]
     ReturnFromTopLevel,
+    #[error("Can't use 'this' outside of a class.")]
+    InvalidThis(Token),
+    #[error("Can't return a value from an initializer.")]
+    ReturnFromInitializer,
 }
 impl Default for Resolver {
     fn default() -> Self {
@@ -24,12 +29,20 @@ impl Default for Resolver {
 enum FunctionType {
     None,
     Function,
+    Method,
+    Initializer,
+}
+#[derive(Clone, Copy, PartialEq)]
+enum ClassType {
+    None,
+    Class,
 }
 impl Resolver {
     pub fn new() -> Self {
         Resolver {
             scopes: vec![],
             cur_func: FunctionType::None,
+            cur_class: ClassType::None,
         }
     }
     pub fn resolve(&mut self, stmts: &[Stmt]) -> VisitorResult<()> {
@@ -146,6 +159,9 @@ impl StmtVisitor for Resolver {
             return Err(ResolverError::ReturnFromTopLevel.into());
         }
         if let Some(expr) = expr {
+            if self.cur_func == FunctionType::Initializer {
+                return Err(ResolverError::ReturnFromInitializer.into());
+            }
             self.resolve_expr(expr)?;
         }
         Ok(())
@@ -165,6 +181,33 @@ impl StmtVisitor for Resolver {
     fn visit_while(&mut self, cond: &Expr, body: &Stmt) -> VisitorResult<()> {
         self.resolve_expr(cond)?;
         self.resolve_stmt(body)?;
+        Ok(())
+    }
+    fn visit_class(&mut self, class: &ClassStmt) -> VisitorResult<()> {
+        let enclosing_class = self.cur_class;
+        self.cur_class = ClassType::Class;
+        self.declare(&class.name)?;
+        self.define(&class.name);
+        self.begin_scope();
+        self.scopes
+            .last_mut()
+            .unwrap()
+            .insert("this".to_owned(), true);
+        for method in class.methods.iter() {
+            let ftype = if method.name.lexeme == "init" {
+                FunctionType::Initializer
+            } else {
+                FunctionType::Method
+            };
+            self.resolve_function(
+                &method.name,
+                Rc::clone(&method.params),
+                Rc::clone(&method.body),
+                ftype,
+            )?;
+        }
+        self.end_scope();
+        self.cur_class = enclosing_class;
         Ok(())
     }
 }
@@ -214,6 +257,22 @@ impl ExprVisitor for Resolver {
             return Err(ResolverError::NotInitialized(variable.name.clone()).into());
         }
         self.resolve_local(variable)?;
+        Ok(Literal::Nil)
+    }
+    fn visit_get(&mut self, get: &Get) -> VisitorResult<Literal> {
+        self.resolve_expr(&get.object)?;
+        Ok(Literal::Nil)
+    }
+    fn visitor_set(&mut self, set: &Set) -> VisitorResult<Literal> {
+        self.resolve_expr(&set.value)?;
+        self.resolve_expr(&set.object)?;
+        Ok(Literal::Nil)
+    }
+    fn visit_this(&mut self, this: &This) -> VisitorResult<Literal> {
+        if self.cur_class == ClassType::None {
+            return Err(ResolverError::InvalidThis(this.token.clone()).into());
+        }
+        self.resolve_local(this)?;
         Ok(Literal::Nil)
     }
 }

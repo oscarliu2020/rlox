@@ -2,9 +2,10 @@ use rustc_hash::FxHashMap;
 
 use super::environment::{Environment, EnvironmentRef, Envt};
 use crate::resolver::Resolvable;
-use crate::syntax::ast::{Assign, Expr, ExprVisitor, FnStmt, Stmt, StmtVisitor, Variable};
-use crate::syntax::token::{Func, Function, Literal, NativeFunc, Token, TokenType};
-use std::{cell::RefCell, rc::Rc};
+use crate::syntax::ast::*;
+use crate::syntax::token::*;
+use std::cell::RefCell;
+use std::rc::Rc;
 pub struct Interpreter {
     global: EnvironmentRef,
     environment: EnvironmentRef,
@@ -43,6 +44,12 @@ impl RloxCallable for Function {
         match self {
             Function::Function(func) => func.params().len(),
             Function::Native(native) => native.arity,
+            Function::Class(class) => class.get_method("init").map_or(0, |e| {
+                let Literal::Callable(ref f) = e else {
+                    unreachable!()
+                };
+                f.arity()
+            }),
         }
     }
     fn call(self, interpreter: &mut Interpreter, args: Vec<Literal>) -> VisitorResult<Literal> {
@@ -53,13 +60,53 @@ impl RloxCallable for Function {
                     func_env.define(param.lexeme.clone(), arg.clone());
                 }
                 match interpreter.execute_block(f.body(), func_env) {
-                    Ok(_) => Ok(Literal::Nil),
-                    Err(VisitorError::ReturnValue(value)) => Ok(value),
+                    Ok(_) => {
+                        if f.is_initializer {
+                            return f
+                                .closure
+                                .get_at(
+                                    0,
+                                    &Token {
+                                        token_type: TokenType::THIS,
+                                        lexeme: "this".to_owned(),
+                                        literal: None,
+                                        line: f.decl.name.line,
+                                    },
+                                )
+                                .map_err(|e| e.into());
+                        }
+                        Ok(Literal::Nil)
+                    }
+                    Err(VisitorError::ReturnValue(value)) => {
+                        if f.is_initializer {
+                            return f
+                                .closure
+                                .get_at(
+                                    0,
+                                    &Token {
+                                        token_type: TokenType::THIS,
+                                        lexeme: "this".to_owned(),
+                                        literal: None,
+                                        line: f.decl.name.line,
+                                    },
+                                )
+                                .map_err(|e| e.into());
+                        }
+                        Ok(value)
+                    }
                     Err(e) => Err(e),
                 }
-                // todo!()
             }
             Function::Native(native) => Ok((native.func)()),
+            Function::Class(class) => {
+                let inner = Rc::new(RefCell::new(Instance::new(class)));
+                let instance = Literal::Instance(Rc::clone(&inner));
+                let ff = inner.borrow().class.get_method("init");
+                if let Some(Literal::Callable(Function::Function(mut init))) = ff {
+                    Function::Function(init.bind(Rc::clone(&inner))).call(interpreter, args)?;
+                }
+                Ok(instance)
+            }
         }
     }
 }
@@ -102,7 +149,6 @@ impl Interpreter {
                 }
             }
         }
-        // self.environment = self.environment.enclosing.take().unwrap();
         self.environment = prev;
         Ok(())
     }
@@ -117,6 +163,7 @@ impl Interpreter {
         )
     }
 }
+
 impl StmtVisitor for Interpreter {
     fn visit_while(&mut self, cond: &Expr, body: &Stmt) -> VisitorResult<()> {
         while self.evaluate(cond)?.is_truthy() {
@@ -138,9 +185,7 @@ impl StmtVisitor for Interpreter {
         } else {
             Literal::Nil
         };
-        self.environment
-            .borrow_mut()
-            .define(token.lexeme.clone(), value);
+        self.environment.define(token.lexeme.clone(), value);
         Ok(())
     }
     fn visit_block(&mut self, stmts: &[Stmt]) -> VisitorResult<()> {
@@ -168,6 +213,7 @@ impl StmtVisitor for Interpreter {
                 body,
             }),
             closure: Rc::clone(&self.environment),
+            is_initializer: false,
         });
         self.environment
             .define(name.lexeme.clone(), Literal::Callable(new_func));
@@ -180,6 +226,26 @@ impl StmtVisitor for Interpreter {
             Literal::Nil
         };
         Err(VisitorError::ReturnValue(value))
+    }
+    fn visit_class(&mut self, class: &crate::syntax::ast::ClassStmt) -> VisitorResult<()> {
+        self.environment
+            .define(class.name.lexeme.clone(), Literal::Nil);
+        let mut method_table = FxHashMap::default();
+        for method in class.methods.iter() {
+            let is_initializer = method.name.lexeme == "init";
+            let func = Function::Function(Func {
+                decl: Rc::new(method.clone()),
+                closure: Rc::clone(&self.environment),
+                is_initializer,
+            });
+            method_table.insert(method.name.lexeme.clone(), Literal::Callable(func));
+        }
+        let klass = Literal::Callable(Function::Class(Class::new(
+            class.name.lexeme.clone(),
+            method_table,
+        )));
+        self.environment.assign(&class.name, klass.clone())?;
+        Ok(())
     }
 }
 
@@ -270,8 +336,6 @@ impl ExprVisitor for Interpreter {
         }
     }
     fn visit_variable(&mut self, variable: &Variable) -> VisitorResult<Literal> {
-        // self.environment.borrow().get(token)
-        // self.look_up_variable(token)
         self.look_up_variable(variable)
     }
     fn visit_assign(&mut self, assign: &Assign) -> VisitorResult<Literal> {
@@ -346,6 +410,29 @@ impl ExprVisitor for Interpreter {
             }
             _ => Err(VisitorError::VistorError),
         }
+    }
+    fn visit_get(&mut self, get: &Get) -> VisitorResult<Literal> {
+        let x = self.evaluate(&get.object)?;
+        if let Literal::Instance(instance) = x {
+            Instance::get(&get.name, &instance).ok_or_else(|| {
+                VisitorError::UndefinedProperty(get.name.clone(), get.name.lexeme.clone())
+            })
+        } else {
+            Err(VisitorError::VistorError)
+        }
+    }
+    fn visitor_set(&mut self, set: &Set) -> VisitorResult<Literal> {
+        let obj = self.evaluate(&set.object)?;
+        if let Literal::Instance(instance) = obj {
+            let value = self.evaluate(&set.value)?;
+            instance.borrow_mut().set(&set.name.lexeme, value.clone());
+            Ok(value)
+        } else {
+            Err(VisitorError::VistorError)
+        }
+    }
+    fn visit_this(&mut self, token: &This) -> VisitorResult<Literal> {
+        self.look_up_variable(token)
     }
 }
 
@@ -555,6 +642,117 @@ counter(); // "2".
             foo();
             return 2;
         "#,
+            &mut interpreter,
+        );
+    }
+    #[test]
+    fn test_class() {
+        let mut interpreter = Interpreter::default();
+        run(
+            r#"
+            class Foo {
+                bar() {
+                    print "bar";
+                }
+            }
+            fun out() {
+                print "out";
+            }
+            var foo = Foo();
+            foo.bar();
+            foo.a=1;
+            print foo.a;
+            foo.out=out;
+            foo.out();
+            class Bacon {
+                eat() {
+                    print "Crunch crunch crunch!";
+                }
+            }
+
+            Bacon().eat(); // Prints "Crunch crunch crunch!".
+            "#,
+            &mut interpreter,
+        );
+    }
+    #[test]
+    fn test_this() {
+        let mut interpreter = Interpreter::default();
+        run(
+            r#"
+            class Foo {
+                bar() {
+                    print this.x;
+                }
+            }
+            var foo = Foo();
+            foo.x=1;
+            foo.bar();
+            "#,
+            &mut interpreter,
+        );
+    }
+    #[test]
+    fn test_init() {
+        let mut interpreter = Interpreter::default();
+        run(
+            r#"
+            class Foo {
+                init(x) {
+                    this.x = x;
+                    return;
+                }
+                bar() {
+                    print this.x;
+                }
+            }
+            var foo = Foo(1);
+            foo.bar();
+            "#,
+            &mut interpreter,
+        );
+    }
+    #[test]
+    #[should_panic]
+    fn test_init2() {
+        let mut interpreter = Interpreter::default();
+        run(
+            r#"
+            class Foo {
+                init(x) {
+                    this.x = x;
+                    return 1;
+                }
+                bar() {
+                    print this.x;
+                }
+            }
+            var foo = Foo(1);
+            foo.bar();
+            "#,
+            &mut interpreter,
+        );
+    }
+    #[test]
+    fn test_init3() {
+        let mut interpreter = Interpreter::default();
+        run(
+            r#"
+            class Foo {
+                init(x) {
+                    this.x = x;
+                }
+                bar() {
+                    print this.x;
+                }
+            }
+            var foo = Foo(2);
+            var bar=foo.init(1);
+            print bar.x;
+            print foo.x;
+            foo.x=3;
+            print bar.x;
+            "#,
             &mut interpreter,
         );
     }

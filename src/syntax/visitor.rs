@@ -29,6 +29,8 @@ pub enum VisitorError {
     Variable(#[from] EnvironmentError),
     #[error("ResolverError: {0}")]
     Resolver(#[from] ResolverError),
+    #[error("line: {} {} ** Undefined property '{}'.",.0.line,.0.lexeme,.1)]
+    UndefinedProperty(Token, String),
 }
 pub type VisitorResult<T> = Result<T, VisitorError>;
 pub trait ExprVisitor {
@@ -42,6 +44,9 @@ pub trait ExprVisitor {
         -> VisitorResult<Literal>;
     fn visit_call(&mut self, callee: &Expr, paren: &Token, args: &[Expr])
         -> VisitorResult<Literal>;
+    fn visit_get(&mut self, get: &Get) -> VisitorResult<Literal>;
+    fn visitor_set(&mut self, set: &Set) -> VisitorResult<Literal>;
+    fn visit_this(&mut self, token: &This) -> VisitorResult<Literal>;
 }
 pub trait StmtVisitor {
     fn visit_while(&mut self, cond: &Expr, body: &Stmt) -> VisitorResult<()>;
@@ -57,4 +62,5 @@ pub trait StmtVisitor {
         body: Rc<[Stmt]>,
     ) -> VisitorResult<()>;
     fn visit_return(&mut self, token: &Token, expr: Option<&Expr>) -> VisitorResult<()>;
+    fn visit_class(&mut self, class: &ClassStmt) -> VisitorResult<()>;
 }
