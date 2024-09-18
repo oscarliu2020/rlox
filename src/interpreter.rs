@@ -733,4 +733,27 @@ counter(); // "2".
             &mut interpreter,
         );
     }
+    #[test]
+    fn test_init3() {
+        let mut interpreter = Interpreter::default();
+        run(
+            r#"
+            class Foo {
+                init(x) {
+                    this.x = x;
+                }
+                bar() {
+                    print this.x;
+                }
+            }
+            var foo = Foo(2);
+            var bar=foo.init(1);
+            print bar.x;
+            print foo.x;
+            foo.x=3;
+            print bar.x;
+            "#,
+            &mut interpreter,
+        );
+    }
 }
