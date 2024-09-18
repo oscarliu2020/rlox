@@ -70,14 +70,30 @@ impl RloxCallable for Function {
                                         token_type: TokenType::THIS,
                                         lexeme: "this".to_owned(),
                                         literal: None,
-                                        line: 0,
+                                        line: f.decl.name.line,
                                     },
                                 )
                                 .map_err(|e| e.into());
                         }
                         Ok(Literal::Nil)
                     }
-                    Err(VisitorError::ReturnValue(value)) => Ok(value),
+                    Err(VisitorError::ReturnValue(value)) => {
+                        if f.is_initializer {
+                            return f
+                                .closure
+                                .get_at(
+                                    0,
+                                    &Token {
+                                        token_type: TokenType::THIS,
+                                        lexeme: "this".to_owned(),
+                                        literal: None,
+                                        line: f.decl.name.line,
+                                    },
+                                )
+                                .map_err(|e| e.into());
+                        }
+                        Ok(value)
+                    }
                     Err(e) => Err(e),
                 }
             }
@@ -684,6 +700,28 @@ counter(); // "2".
             class Foo {
                 init(x) {
                     this.x = x;
+                    return;
+                }
+                bar() {
+                    print this.x;
+                }
+            }
+            var foo = Foo(1);
+            foo.bar();
+            "#,
+            &mut interpreter,
+        );
+    }
+    #[test]
+    #[should_panic]
+    fn test_init2() {
+        let mut interpreter = Interpreter::default();
+        run(
+            r#"
+            class Foo {
+                init(x) {
+                    this.x = x;
+                    return 1;
                 }
                 bar() {
                     print this.x;

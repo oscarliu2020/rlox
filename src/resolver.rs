@@ -1,5 +1,4 @@
 use super::syntax::{ast::*, token::*};
-use core::error;
 use rustc_hash::FxHashMap;
 use std::rc::Rc;
 pub struct Resolver {
