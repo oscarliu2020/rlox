@@ -151,6 +151,7 @@ impl Get {
 pub struct ClassStmt {
     pub name: Token,
     pub methods: Rc<[FnStmt]>,
+    pub superclass: Option<Expr>,
 }
 impl Display for ClassStmt {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -162,8 +163,12 @@ impl Display for ClassStmt {
     }
 }
 impl ClassStmt {
-    pub fn new(name: Token, methods: Rc<[FnStmt]>) -> Self {
-        Self { name, methods }
+    pub fn new(name: Token, methods: Rc<[FnStmt]>, superclass: Option<Expr>) -> Self {
+        Self {
+            name,
+            methods,
+            superclass,
+        }
     }
 }
 #[derive(Debug, PartialEq)]

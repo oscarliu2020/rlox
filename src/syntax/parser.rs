@@ -403,7 +403,15 @@ impl<'a> Parser<'a> {
     }
     fn class_declaration(&mut self) -> Result<ast::Stmt, ParserError> {
         let name = self.consume(TokenType::IDENTIFIER, "Expect class name")?;
+        let mut superclass = None;
+        if match_token!(self, TokenType::LESS) {
+            self.consume(TokenType::IDENTIFIER, "Expect superclass name.")?;
+            superclass = Some(ast::Expr::Variable(ast::Variable::new(
+                self.previous().clone(),
+            )));
+        }
         self.consume(TokenType::LEFT_BRACE, "Expect '{' before class body")?;
+
         let mut methods = vec![];
         while !self.check(&TokenType::RIGHT_BRACE) && !self.is_at_end() {
             let ast::Stmt::Function(func) = self.function("method")? else {
@@ -415,6 +423,7 @@ impl<'a> Parser<'a> {
         Ok(ast::Stmt::Class(ast::ClassStmt::new(
             name.clone(),
             methods.into(),
+            superclass,
         )))
     }
     fn declaration(&mut self) -> Option<ast::Stmt> {
