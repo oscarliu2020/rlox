@@ -228,6 +228,18 @@ impl StmtVisitor for Interpreter {
         Err(VisitorError::ReturnValue(value))
     }
     fn visit_class(&mut self, class: &crate::syntax::ast::ClassStmt) -> VisitorResult<()> {
+        /*
+        TODO: extract to a function
+        */
+        let superclass = match &class.superclass {
+            Some(expr) => {
+                let Literal::Callable(Function::Class(s)) = self.evaluate(expr)? else {
+                    return Err(VisitorError::SuperclassMustBeAClass(class.name.line));
+                };
+                Some(Rc::new(s))
+            }
+            None => None,
+        };
         self.environment
             .define(class.name.lexeme.clone(), Literal::Nil);
         let mut method_table = FxHashMap::default();
@@ -243,6 +255,7 @@ impl StmtVisitor for Interpreter {
         let klass = Literal::Callable(Function::Class(Class::new(
             class.name.lexeme.clone(),
             method_table,
+            superclass,
         )));
         self.environment.assign(&class.name, klass.clone())?;
         Ok(())
@@ -752,6 +765,29 @@ counter(); // "2".
             print foo.x;
             foo.x=3;
             print bar.x;
+            "#,
+            &mut interpreter,
+        );
+    }
+    #[test]
+    fn test_inherit() {
+        let mut interpreter = Interpreter::default();
+        run(
+            r#"
+            class B{
+                bar() {
+                    print "bar";
+                }
+            }
+            class A <B {
+                init() {
+                    this.x = 1;
+                }
+                foo() {
+                    print this.x;
+                }
+            }
+            A().bar();
             "#,
             &mut interpreter,
         );
