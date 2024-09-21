@@ -21,6 +21,10 @@ pub enum ResolverError {
     ReturnFromInitializer(usize),
     #[error("line {}: {} ** A class can't inherit from itself.", .0.line, .0.lexeme)]
     InheritFromSelf(Token),
+    #[error("line {}: ** Can't use 'super' outside of a class.", .0.line)]
+    InvalidSuper(Token),
+    #[error("line {}: ** Can't use 'super' in a class with no superclass.", .0.line)]
+    SuperclassNotInherited(Token),
 }
 impl Default for Resolver {
     fn default() -> Self {
@@ -38,6 +42,7 @@ enum FunctionType {
 enum ClassType {
     None,
     Class,
+    Superclass,
 }
 impl Resolver {
     pub fn new() -> Self {
@@ -197,6 +202,7 @@ impl StmtVisitor for Resolver {
             if variable.name.lexeme == class.name.lexeme {
                 return Err(ResolverError::InheritFromSelf(class.name.clone()).into());
             }
+            self.cur_class = ClassType::Superclass;
             self.resolve_expr(superclass)?;
             self.begin_scope();
             self.scopes
@@ -295,7 +301,13 @@ impl ExprVisitor for Resolver {
         Ok(Literal::Nil)
     }
     fn visit_super(&mut self, s: &Super) -> VisitorResult<Literal> {
-        self.resolve_local(s)?;
+        match self.cur_class {
+            ClassType::None => return Err(ResolverError::InvalidSuper(s.name().clone()).into()),
+            ClassType::Superclass => {
+                self.resolve_local(s)?;
+            }
+            _ => return Err(ResolverError::SuperclassNotInherited(s.name().clone()).into()),
+        }
         Ok(Literal::Nil)
     }
 }

@@ -5,7 +5,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     group
         // .sample_size(10)
         .measurement_time(std::time::Duration::from_secs(200))
-        .warm_up_time(std::time::Duration::from_secs(40));
+        .warm_up_time(std::time::Duration::from_secs(10));
     group.bench_function("fib", |b| {
         b.iter(|| run_file(black_box("test_data/benches/fib.lox")))
     });
