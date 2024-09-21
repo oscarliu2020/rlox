@@ -6,8 +6,17 @@ fn criterion_benchmark(c: &mut Criterion) {
         // .sample_size(10)
         .measurement_time(std::time::Duration::from_secs(200))
         .warm_up_time(std::time::Duration::from_secs(40));
-    group.bench_function("bench1", |b| {
+    group.bench_function("fib", |b| {
         b.iter(|| run_file(black_box("test_data/benches/fib.lox")))
+    });
+    group.bench_function("binary_trees", |b| {
+        b.iter(|| run_file(black_box("test_data/benches/binary_trees.lox")))
+    });
+    group.bench_function("equality", |b| {
+        b.iter(|| run_file(black_box("test_data/benches/equality.lox")))
+    });
+    group.bench_function("zoo_batch", |b| {
+        b.iter(|| run_file(black_box("test_data/benches/zoo_batch.lox")))
     });
     group.finish();
 }
