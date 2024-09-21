@@ -1,6 +1,6 @@
 use rlox::runner::run_file;
 #[test]
-fn empty(){
+fn empty() {
     run_file("test_data/class/empty.lox");
 }
 #[test]
@@ -25,6 +25,7 @@ fn inherited_method() {
     run_file("test_data/class/inherited_method.lox");
 }
 #[test]
+#[should_panic]
 fn local_inherit_self() {
     run_file("test_data/class/local_inherit_self.lox");
 }
