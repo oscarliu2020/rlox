@@ -1,6 +1,7 @@
 use rustc_hash::FxHashMap;
 
 use super::environment::{Environment, EnvironmentRef, Envt};
+use crate::environment::EnvironmentError;
 use crate::resolver::Resolvable;
 use crate::syntax::ast::*;
 use crate::syntax::token::*;
@@ -242,6 +243,11 @@ impl StmtVisitor for Interpreter {
         };
         self.environment
             .define(class.name.lexeme.clone(), Literal::Nil);
+        if superclass.is_some() {
+            self.environment = Rc::new(RefCell::new(Environment::new(Some(Rc::clone(
+                &self.environment,
+            )))));
+        }
         let mut method_table = FxHashMap::default();
         for method in class.methods.iter() {
             let is_initializer = method.name.lexeme == "init";
@@ -255,8 +261,12 @@ impl StmtVisitor for Interpreter {
         let klass = Literal::Callable(Function::Class(Class::new(
             class.name.lexeme.clone(),
             method_table,
-            superclass,
+            superclass.clone(),
         )));
+        if superclass.is_some() {
+            let parent = self.environment.borrow().enclosing.clone();
+            self.environment = parent.unwrap();
+        }
         self.environment.assign(&class.name, klass.clone())?;
         Ok(())
     }
@@ -446,6 +456,38 @@ impl ExprVisitor for Interpreter {
     }
     fn visit_this(&mut self, token: &This) -> VisitorResult<Literal> {
         self.look_up_variable(token)
+    }
+    fn visit_super(&mut self, s: &Super) -> VisitorResult<Literal> {
+        // self.look_up_variable(s)
+        let superclass = s.get_dist().map_or_else(
+            || Err(EnvironmentError::InvalidEnvironmentDistance),
+            |dist| self.environment.get_at(dist, s.name()),
+        )?;
+        let Literal::Callable(Function::Class(superclass)) = superclass else {
+            unreachable!()
+        };
+        let dist = s.get_dist().unwrap(); //safe to unwrap
+        let obj = self.environment.get_at(
+            dist - 1,
+            &Token {
+                token_type: TokenType::THIS,
+                lexeme: "this".to_owned(),
+                literal: None,
+                line: s.name().line,
+            },
+        )?;
+        let Literal::Instance(instance) = obj else {
+            unreachable!()
+        };
+        let Literal::Callable(Function::Function(mut method)) = superclass
+            .get_method(s.method.lexeme.as_str())
+            .ok_or_else(|| {
+                VisitorError::UndefinedProperty(s.method.clone(), s.method.lexeme.clone())
+            })?
+        else {
+            unreachable!()
+        };
+        Ok(Literal::Callable(Function::Function(method.bind(instance))))
     }
 }
 

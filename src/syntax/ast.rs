@@ -16,6 +16,7 @@ pub enum Expr {
     Get(Get),
     Set(Set),
     This(This),
+    Super(Super),
 }
 impl Display for Expr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -56,6 +57,9 @@ impl Display for Expr {
             }
             Expr::This(_) => {
                 write!(f, "this")
+            }
+            Expr::Super(s) => {
+                write!(f, "super.{}", s.method.lexeme)
             }
         }
     }
@@ -216,6 +220,21 @@ impl This {
         }
     }
 }
+#[derive(Debug, PartialEq)]
+pub struct Super {
+    token: Token,
+    pub method: Token,
+    dist: Cell<Option<usize>>,
+}
+impl Super {
+    pub fn new(token: Token, method: Token) -> Self {
+        Self {
+            token,
+            method,
+            dist: Cell::new(None),
+        }
+    }
+}
 pub use super::visitor::*;
 impl Stmt {
     pub fn accept(&self, visitor: &mut impl StmtVisitor) -> VisitorResult<()> {
@@ -248,6 +267,7 @@ impl Expr {
             Expr::Get(get) => visitor.visit_get(get),
             Expr::Set(set) => visitor.visitor_set(set),
             Expr::This(this) => visitor.visit_this(this),
+            Expr::Super(s) => visitor.visit_super(s),
         }
     }
 }
@@ -275,6 +295,17 @@ impl Resolvable for Assign {
     }
 }
 impl Resolvable for This {
+    fn name(&self) -> &Token {
+        &self.token
+    }
+    fn get_dist(&self) -> Option<usize> {
+        self.dist.get()
+    }
+    fn set_dist(&self, dist: usize) {
+        self.dist.set(Some(dist));
+    }
+}
+impl Resolvable for Super {
     fn name(&self) -> &Token {
         &self.token
     }
