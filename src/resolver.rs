@@ -198,6 +198,11 @@ impl StmtVisitor for Resolver {
                 return Err(ResolverError::InheritFromSelf(class.name.clone()).into());
             }
             self.resolve_expr(superclass)?;
+            self.begin_scope();
+            self.scopes
+                .last_mut()
+                .unwrap()
+                .insert("super".to_owned(), true);
         }
         self.begin_scope();
         self.scopes
@@ -218,6 +223,9 @@ impl StmtVisitor for Resolver {
             )?;
         }
         self.end_scope();
+        if class.superclass.is_some() {
+            self.end_scope();
+        }
         self.cur_class = enclosing_class;
         Ok(())
     }
@@ -284,6 +292,10 @@ impl ExprVisitor for Resolver {
             return Err(ResolverError::InvalidThis(this.token.clone()).into());
         }
         self.resolve_local(this)?;
+        Ok(Literal::Nil)
+    }
+    fn visit_super(&mut self, s: &Super) -> VisitorResult<Literal> {
+        self.resolve_local(s)?;
         Ok(Literal::Nil)
     }
 }

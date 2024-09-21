@@ -49,6 +49,7 @@ pub trait ExprVisitor {
     fn visit_get(&mut self, get: &Get) -> VisitorResult<Literal>;
     fn visitor_set(&mut self, set: &Set) -> VisitorResult<Literal>;
     fn visit_this(&mut self, token: &This) -> VisitorResult<Literal>;
+    fn visit_super(&mut self, s: &Super) -> VisitorResult<Literal>;
 }
 pub trait StmtVisitor {
     fn visit_while(&mut self, cond: &Expr, body: &Stmt) -> VisitorResult<()>;

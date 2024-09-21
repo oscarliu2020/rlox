@@ -1,4 +1,4 @@
-use super::ast::{self, Assign, FnStmt, Get, Set, This, Variable};
+use super::ast::{self, Assign, FnStmt, Get, Set, Super, This, Variable};
 use super::token::{Literal, Token, TokenType};
 use std::rc::Rc;
 pub struct Parser<'a> {
@@ -123,6 +123,14 @@ impl<'a> Parser<'a> {
         }
         if match_token!(self, [TokenType::THIS]) {
             return Ok(ast::Expr::This(This::new(self.previous().clone())));
+        }
+        if match_token!(self, [TokenType::SUPER]) {
+            self.consume(TokenType::DOT, "expected '.' after 'super'")?;
+            let method = self.consume(TokenType::IDENTIFIER, "expected superclass method name")?;
+            return Ok(ast::Expr::Super(Super::new(
+                self.previous().clone(),
+                method.clone(),
+            )));
         }
         self.error(self.peek(), "expected expression");
         Err(ParserError())
