@@ -108,13 +108,29 @@ impl Literal {
 pub struct Class {
     name: String,
     pub methods: FxHashMap<String, Literal>,
+    superclass: Option<Rc<Class>>,
 }
 impl Class {
-    pub fn new(name: String, methods: FxHashMap<String, Literal>) -> Self {
-        Self { name, methods }
+    pub fn new(
+        name: String,
+        methods: FxHashMap<String, Literal>,
+        superclass: Option<Rc<Class>>,
+    ) -> Self {
+        Self {
+            name,
+            methods,
+            superclass,
+        }
     }
     pub fn get_method(&self, name: &str) -> Option<Literal> {
-        self.methods.get(name).cloned()
+        self.methods.get(name).cloned().or_else(|| {
+            self.superclass
+                .as_ref()
+                .and_then(|superclass| superclass.get_method(name))
+        })
+    }
+    pub fn superclass(&self) -> Option<Rc<Class>> {
+        self.superclass.clone()
     }
 }
 impl Display for Class {

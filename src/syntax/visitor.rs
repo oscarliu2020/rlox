@@ -23,14 +23,16 @@ pub enum VisitorError {
     UndefinedVariable(Token),
     #[error("Return value: {0}")]
     ReturnValue(Literal),
-    #[error("line: {} {} ** Can't read local variable in its own initializer.",.0.line,.0.lexeme)]
+    #[error("line {}: {} ** Can't read local variable in its own initializer.",.0.line,.0.lexeme)]
     NotInitialized(Token),
     #[error("EnvironmentError: {0}")]
     Variable(#[from] EnvironmentError),
     #[error("ResolverError: {0}")]
     Resolver(#[from] ResolverError),
-    #[error("line: {} {} ** Undefined property '{}'.",.0.line,.0.lexeme,.1)]
+    #[error("line {}: {} ** Undefined property '{}'.",.0.line,.0.lexeme,.1)]
     UndefinedProperty(Token, String),
+    #[error("line {0}: ** Superclass must be a class.")]
+    SuperclassMustBeAClass(usize),
 }
 pub type VisitorResult<T> = Result<T, VisitorError>;
 pub trait ExprVisitor {

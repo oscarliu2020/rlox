@@ -9,16 +9,18 @@ pub struct Resolver {
 use thiserror::Error;
 #[derive(Error, Debug)]
 pub enum ResolverError {
-    #[error("Variable {0} not initialized")]
+    #[error("line {}: ** Variable {} not initialized", .0.line, .0.lexeme)]
     NotInitialized(Token),
-    #[error("Already a variable with this name in this scope.")]
+    #[error("line {}: {} ** Already a variable with this name in this scope.", .0.line, .0.lexeme)]
     AlreadyDeclared(Token),
-    #[error("Can't return from top-level code.")]
-    ReturnFromTopLevel,
-    #[error("Can't use 'this' outside of a class.")]
+    #[error("line {}: ** Can't return from top-level code.", .0.line)]
+    ReturnFromTopLevel(Token),
+    #[error("line {}: ** Can't use 'this' outside of a class.", .0.line)]
     InvalidThis(Token),
-    #[error("Can't return a value from an initializer.")]
-    ReturnFromInitializer,
+    #[error("line {0}: ** Can't return a value from an initializer.")]
+    ReturnFromInitializer(usize),
+    #[error("line {}: {} ** A class can't inherit from itself.", .0.line, .0.lexeme)]
+    InheritFromSelf(Token),
 }
 impl Default for Resolver {
     fn default() -> Self {
@@ -152,15 +154,15 @@ impl StmtVisitor for Resolver {
     }
     fn visit_return(
         &mut self,
-        _: &crate::syntax::token::Token,
+        ret: &crate::syntax::token::Token,
         expr: Option<&Expr>,
     ) -> VisitorResult<()> {
         if self.cur_func == FunctionType::None {
-            return Err(ResolverError::ReturnFromTopLevel.into());
+            return Err(ResolverError::ReturnFromTopLevel(ret.clone()).into());
         }
         if let Some(expr) = expr {
             if self.cur_func == FunctionType::Initializer {
-                return Err(ResolverError::ReturnFromInitializer.into());
+                return Err(ResolverError::ReturnFromInitializer(ret.line).into());
             }
             self.resolve_expr(expr)?;
         }
@@ -188,6 +190,15 @@ impl StmtVisitor for Resolver {
         self.cur_class = ClassType::Class;
         self.declare(&class.name)?;
         self.define(&class.name);
+        if let Some(superclass) = &class.superclass {
+            let Expr::Variable(variable) = superclass else {
+                unreachable!()
+            };
+            if variable.name.lexeme == class.name.lexeme {
+                return Err(ResolverError::InheritFromSelf(class.name.clone()).into());
+            }
+            self.resolve_expr(superclass)?;
+        }
         self.begin_scope();
         self.scopes
             .last_mut()
